@@ -21,6 +21,8 @@ formatter=logging.Formatter('%(asctime)s %(levelname)s %(message)s')
 console.setFormatter(formatter)
 logger.addHandler(console)
 
+tmpdir = "tmp/"
+icondir = "icons/"
 yyyy,mm=2017,12
 logger.info('Starting run for %i-%i...' % (yyyy,mm))
 
@@ -75,6 +77,13 @@ else:
 centres = ["H","NY1","SNG","LON1","PA"]   # short names used in the Excel file
 centres_long = ["Houston", "New York", "Singapore", "London", "Palo Alto"]  # same order as short names
 
+stop_words=[]
+if 'stopwords' in cfg:
+    stop_words+=json.loads(cfg.get('stopwords','stop_words'))
+else:
+    logger.error('No [stopwords] section in {}'.format(ini_file))
+stop_words+=vocab
+
 def make_date(cell_val):
     """Used to create a better-structured date value from the sometimes-odd values in the date column
        Returns a datetime
@@ -89,6 +98,20 @@ def make_date(cell_val):
     else:
         v=date.fromordinal(2)
     return v
+
+def tidy_text(cell_val):
+    """Standardises the text in a cell:
+       Returns the tidied text
+    """
+    if type(cell_val) is str:
+        cell = cell_val.lower()
+        cell=re.sub('[\n&@,.-]',' ',cell)
+        cell=" ".join(cell.split())   # idiom to turn multiple spaces between words into single spaces
+        for k,v in synonym_list.items():
+            cell=cell.replace(k,v)
+    else:
+        cell=""
+    return cell
 
 def replace_strings(series,repl_dict):
     for k,v in repl_dict.items():
@@ -106,6 +129,23 @@ def keyword_counts_in_series(series,keywords):
             count_list[i]=sum(list_of_strings.str.find(i)>=0)
     return count_list
 
+def print_new_candidate_words(df,stop_words,top_n=25):
+    """Print the top_n words in the relevant columns in the dataframe df that aren't in the
+       stop_words
+       Input are a dataframe with columns 'Want to Learn More About' and 'Action Items',
+       a list in stop_words of single words to ignore, and the number of top words to show (default 25)
+    """
+    big_lst=[]
+    for lst in list(df['Want to Learn More About'].str.lower().str.split()):
+        if type(lst)==list: big_lst += lst
+    for lst in list(df['Action Items'].str.lower().str.split()):
+        if type(lst)==list: big_lst += lst
+
+    all_ctr=Counter(big_lst)
+    for s in stop_words: del all_ctr[s]
+    print("Common words which are possible candidates for new keywords:")
+    print(all_ctr.most_common(20))
+    return
 
 def dataframe_for_month(df, year=2017, month=1):
     """Yields a subset the dataframe with only those rows in the given month
@@ -260,7 +300,7 @@ def file_wordcloud_for_month(keywords_for_month, useful_rows_for_month, year=201
     # set font so 30% occurrence of top word uses 196 point font
     percent = round(100*(keywords_for_month.most_common(1)[0][1]/useful_rows_for_month))
     font_for_biggest_word = round( 196 * percent/30 )
-    logger.info("font for word {} is {} based on {}% = {} / {}".format(
+    logger.debug("font for word {} is {} based on {}% = {} / {}".format(
                                keywords_for_month.most_common(1)[0][0],
                                      font_for_biggest_word,
                                              percent,
@@ -295,7 +335,7 @@ def file_wordcloud_for_month(keywords_for_month, useful_rows_for_month, year=201
     plt.figure()
     #plt.show()
 
-    filename = "wordcloud-"+calendar.month_name[month]+".png"
+    filename = tmpdir+"wordcloud-"+calendar.month_name[month]+".png"
     plt.imsave(filename,wc_for_month,format="png")
     plt.close()
 
@@ -313,7 +353,7 @@ def file_graph_for_month_kwd(kwd,kwd_pos,vals,months,line_color):
     m_this_percent    = "{0:.0f}%".format(vals[2] * 100)
     ax.text(0,vals[0],calendar.month_name[months[0]]+"\n"+m_minus_2_percent,fontsize=36)
     ax.text(2,vals[2],calendar.month_name[months[2]]+"\n"+m_this_percent,fontsize=36)
-    filename = "graph-"+str(kwd_pos)+".png"
+    filename = tmpdir+"graph-"+str(kwd_pos)+".png"
     logger.debug("Saving %s graph for keyword %s in file %s" % (kwd_pos,kwd,filename))
     fig.savefig(filename,bbox_inches="tight")
     plt.close(fig)
@@ -329,7 +369,7 @@ def file_donut_pie_for_month(values,name):
     width = 0.50  #determines the thickness of donut rim
     plt.setp( outside, width=width, edgecolor='white')
 
-    filename = "donut-"+re.sub(r"[& ]","_",str(name))+".png"
+    filename = tmpdir+"donut-"+re.sub(r"[& ]","_",str(name))+".png"
     logger.debug("Saving <%s> donut in file %s with values %r" % (name, filename, values))
     fig.savefig(filename,bbox_inches="tight")
 
@@ -348,7 +388,7 @@ def file_donut_pie_for_industries(industries):
     ax.legend(industries.index.tolist(),ncol=3,fontsize=24,loc=10,bbox_to_anchor=(0.5,-2),frameon=False)
     plt.setp( outside, width=width, edgecolor='white')
 
-    filename = "donut-industries.png"
+    filename = tmpdir+"donut-industries.png"
     logger.debug("Saving Industries donut in file %s with values %r" % (filename, industries))
     fig.savefig(filename,bbox_inches="tight")
 
@@ -373,8 +413,9 @@ def write_customer_list(df_for_kwd,text_frame):
     return
 
 def write_top_keywords(text_frame,titleText,kwd_counts_for_ind,rowcount,percent=True):
-    """Write a section headed by titleText, with bullets of the top 4 elements of Counter kwd_counts_for_ind plus
-       their percentage of use, where the percentage is calculated with rowcount as the denominator.
+    """Write a section headed by titleText, with bullets of the top 4 elements of Counter
+       kwd_counts_for_ind plus their percentage of use (if percent=True), where
+       the percentage is calculated with rowcount as the denominator.
          e.g:
            c=Counter([("alpha":5),("bravo":4),("charlie":3),("delta":2))])
            write_top_keywords(tf,"My list",c,10)
@@ -416,6 +457,9 @@ def find_text_in_shapes(slide_shapes,searchword):
     return found_idx
 
 def replace_text_in_shape(slide_shapes,find,use,slidename):
+    """Find the placeholder text "find" in the slide_shapes, replace it with "use",
+       reporting an error on "slidename" if we can't find "find"
+    """
     i = find_text_in_shapes(slide_shapes,find)
     if (i>=0):
         text_frame = slide_shapes[i].text_frame
@@ -434,12 +478,71 @@ def new_run_in_slide(para,text='text',fontname='Arial',fontsize=24):
     font.name = fontname
     return run
 
+import struct
+import imghdr
+
+def get_image_size(fname):
+    '''Determine the image type of fname and return its width, height.
+    from draco (via stackoverflow)'''
+    with open(fname, 'rb') as fhandle:
+        head = fhandle.read(24)
+        if len(head) != 24:
+            return
+        if imghdr.what(fname) == 'png':
+            check = struct.unpack('>i', head[4:8])[0]
+            if check != 0x0d0a1a0a:
+                return
+            width, height = struct.unpack('>ii', head[16:24])
+        elif imghdr.what(fname) == 'gif':
+            width, height = struct.unpack('<HH', head[6:10])
+        elif imghdr.what(fname) == 'jpeg':
+            try:
+                fhandle.seek(0) # Read 0xff next
+                size = 2
+                ftype = 0
+                while not 0xc0 <= ftype <= 0xcf:
+                    fhandle.seek(size, 1)
+                    byte = fhandle.read(1)
+                    while ord(byte) == 0xff:
+                        byte = fhandle.read(1)
+                    ftype = ord(byte)
+                    size = struct.unpack('>H', fhandle.read(2))[0] - 2
+                # We are at a SOFn block
+                fhandle.seek(1, 1)  # Skip `precision' byte.
+                height, width = struct.unpack('>HH', fhandle.read(4))
+            except Exception: #IGNORE:W0703
+                return
+        else:
+            return
+        return width, height
+
+def add_icon(ss,icon_name,left,top,small=False):
+    ## ok if icon exists, and use error icon if not
+    logger.debug("adding icon {}".format(icon_name))
+    try:
+        filename = icondir+icon_name+".png"
+        icon_width, icon_height = get_image_size(filename)
+        pixels_per_mm = 6
+        if small:
+            icon_width = 0.4*icon_width
+            ss.add_picture(filename,round(left-icon_width/pixels_per_mm),top,Mm(12),Mm(12))
+        else:
+            ss.add_picture(filename,round(left-icon_width/pixels_per_mm),top,Mm(34),Mm(34))
+    except:
+        logger.warning("Could not find icon {}".format(icondir+icon_name+'.png'))
+    return
+
 excel_file='Insights.xlsx'
 logger.info("Importing excel file "+excel_file)
-all_df = pd.read_excel(open(excel_file,'rb'),header=8)
+all_df = pd.read_excel(open(excel_file,'rb'),header=8,usecols="A:S")
 
-logger.debug("Adding structured date column")
+print_new_candidate_words(all_df,stop_words)
+
+logger.debug("Adding structured columns")
 all_df.insert(loc=0,column='date',value=all_df['Visit Date'].apply(make_date))
+all_df.insert(loc=1,column='wtlma',value=all_df['Want to Learn More About'].apply(tidy_text))
+all_df.insert(loc=2,column='ai',value=all_df['Action Items'].apply(tidy_text))
+
 
 ## Given the month and year, calc the number of the previous few months
 if (mm==1): mm_minus_1,year_for_mm_minus_1 = 12, yyyy-1
@@ -451,7 +554,7 @@ else: mm_minus_6, year_for_mm_minus_6 = mm-6, yyyy
 
 ### Now start to generate the powerpoint
 from pptx import Presentation
-from pptx.util import Inches, Pt
+from pptx.util import Inches, Pt, Mm
 
 # These appear to be the layouts used in the master for this slide deck
 LAYOUT_TITLE_WITH_DARK_PICTURE = 0
@@ -488,19 +591,19 @@ logger.info("3rd slide: large wordcloud for this month, and top 3 keywords")
 df_for_month = dataframe_for_month(all_df, year=yyyy, month=mm)
 kwd_count_for_month = keywords_in_dataframe(df_for_month,vocab)
 useful_rows_in_m = count_rows_with_comments(df_for_month)
-logger.info("Top keyword/counts for month %i : %r" % (mm,kwd_count_for_month.most_common(5)) )
+logger.debug("Top keyword/counts for month %i : %r" % (mm,kwd_count_for_month.most_common(5)) )
 file_wordcloud_for_month(kwd_count_for_month, useful_rows_in_m,
                          year=yyyy,month=mm)
 ## Modifying main wordcloud slide by changing title and adding pic for this month's wordcloud
-logger.info("Modifying text and adding wordcloud in slide 2")
+logger.debug("Modifying text and adding wordcloud in slide 2")
 s = prs.slides[2]
 slide_shapes=s.shapes
 title_frame = slide_shapes.title.text_frame
 title_frame.clear()
 new_run_in_slide(title_frame.paragraphs[0],text="In "+this_month+" customers wanted to learn more about...",
        fontname="Arial",fontsize=28)
-left=Inches(0.5); top=Inches(4.0)
-slide_shapes.add_picture("wordcloud-"+this_month+".png",left,top,height=Inches(2.5))
+left=Mm(12.5); top=Mm(100)
+slide_shapes.add_picture(tmpdir+"wordcloud-"+this_month+".png",left,top,height=Mm(63))
 
 ##Find where the placeholders are for the top 3 keywords update them
 top_3 = kwd_count_for_month.most_common(3)   # top 3 keywords for most recent month in list with their counts
@@ -511,6 +614,10 @@ logger.debug("Top 3 keywords for current month are %s %s %s" % (kwd0,kwd1,kwd2))
 replace_text_in_shape(slide_shapes,find="topword_1",use=kwd0,slidename="3rd slide")
 replace_text_in_shape(slide_shapes,find="topword_2",use=kwd1,slidename="3rd slide")
 replace_text_in_shape(slide_shapes,find="topword_3",use=kwd2,slidename="3rd slide")
+t=Mm(51)
+add_icon(slide_shapes,kwd0,left=Mm(47),top=t)
+add_icon(slide_shapes,kwd1,left=Mm(152),top=t)
+add_icon(slide_shapes,kwd2,left=Mm(255),top=t)
 
 ################################################
 ## 4th slide: count the keywords for previous two months, and build their wordclouds.
@@ -518,32 +625,34 @@ replace_text_in_shape(slide_shapes,find="topword_3",use=kwd2,slidename="3rd slid
 logger.info(">>>> 4th slide: three wordclouds for most recent 3 months")
 df_for_month_minus_1 = dataframe_for_month(all_df, year=year_for_mm_minus_1, month=mm_minus_1)
 kwd_count_for_m_minus_1 = keywords_in_dataframe(df_for_month_minus_1,vocab)
-logger.info("Top keyword/counts for month %i : %r" % (mm_minus_1,kwd_count_for_m_minus_1.most_common(5)) )
+logger.debug("Top keyword/counts for month %i : %r" % (mm_minus_1,kwd_count_for_m_minus_1.most_common(5)) )
 
 df_for_month_minus_2 = dataframe_for_month(all_df, year=year_for_mm_minus_2, month=mm_minus_2)
 kwd_count_for_m_minus_2 = keywords_in_dataframe(df_for_month_minus_2,vocab)
-logger.info("Top keyword/counts for month %i : %r" % (mm_minus_2,kwd_count_for_m_minus_2.most_common(5)) )
+logger.debug("Top keyword/counts for month %i : %r" % (mm_minus_2,kwd_count_for_m_minus_2.most_common(5)) )
 
 useful_rows_in_m_2 = count_rows_with_comments(df_for_month_minus_2)
 useful_rows_in_m_1 = count_rows_with_comments(df_for_month_minus_1)
-logger.info("Useful rows in months 2,1,0 are %i, %i, %i" % (useful_rows_in_m_2,useful_rows_in_m_1,useful_rows_in_m))
+logger.debug("Useful rows in months 2,1,0 are %i, %i, %i" % (useful_rows_in_m_2,useful_rows_in_m_1,useful_rows_in_m))
 
 file_wordcloud_for_month(kwd_count_for_m_minus_1, useful_rows_in_m_1, year=year_for_mm_minus_1,month=mm_minus_1)
 file_wordcloud_for_month(kwd_count_for_m_minus_2, useful_rows_in_m_2, year=year_for_mm_minus_2,month=mm_minus_2)
 
 ## Modifying 3-month wordcloud slide by adding pic for last 3 months' wordcloud
-logger.info("Adding three wordclouds in slide 3")
+logger.info("Adding three wordclouds in 4th slide")
 s = prs.slides[3]
 slide_shapes=s.shapes
-left=Inches(3.65)
-top=Inches(1.4)
-slide_shapes.add_picture("wordcloud-"+calendar.month_name[mm_minus_2]+".png",left,top,height=Inches(1.5))
-top=Inches(3.25)
-slide_shapes.add_picture("wordcloud-"+calendar.month_name[mm_minus_1]+".png",
-                         left,top,height=Inches(1.5))
-top=Inches(5.05)
-slide_shapes.add_picture("wordcloud-"+this_month+".png",
-                         left,top,height=Inches(1.5))
+left=Mm(93)
+top=Mm(36)
+h=Mm(38)
+slide_shapes.add_picture(tmpdir+"wordcloud-"+calendar.month_name[mm_minus_2]+".png",
+                         left,top,height=h)
+top=Mm(83)
+slide_shapes.add_picture(tmpdir+"wordcloud-"+calendar.month_name[mm_minus_1]+".png",
+                         left,top,height=h)
+top=Mm(128)
+slide_shapes.add_picture(tmpdir+"wordcloud-"+this_month+".png",
+                         left,top,height=h)
 #Find where the placeholders are for the keywords whose frequency we are graphing and update them
 replace_text_in_shape(slide_shapes,find="Month-2",use=calendar.month_name[mm_minus_2],slidename="4th slide")
 replace_text_in_shape(slide_shapes,find="Month-1",use=calendar.month_name[mm_minus_1],slidename="4th slide")
@@ -560,21 +669,21 @@ kwd0_c1 = kwd_count_for_m_minus_1[kwd0] if (kwd0 in kwd_count_for_m_minus_1) els
 kwd0_c0 = kwd_count_for_month[kwd0]     # must have keyword as it came from this dictionary
 vals_kwd0=[kwd0_c2/useful_rows_in_m_2, kwd0_c1/useful_rows_in_m_1, kwd0_c0/useful_rows_in_m]
 file_linegraph_topic1 = file_graph_for_month_kwd(kwd0,"1st",vals_kwd0,months,colour_list[0])
-logger.info("Kwd0 is %s, data %r" % (kwd0,vals_kwd0))
+logger.debug("Kwd0 is %s, data %r" % (kwd0,vals_kwd0))
 kwd1_c2 = kwd_count_for_m_minus_2[kwd1] if (kwd1 in kwd_count_for_m_minus_2) else 0
 
 kwd1_c1 = kwd_count_for_m_minus_1[kwd1] if (kwd1 in kwd_count_for_m_minus_1) else 0
 kwd1_c0 = kwd_count_for_month[kwd1]     # must have keyword as it came from this dictionary
 vals_kwd1=[kwd1_c2/useful_rows_in_m_2, kwd1_c1/useful_rows_in_m_1, kwd1_c0/useful_rows_in_m]
 file_linegraph_topic2 = file_graph_for_month_kwd(kwd1,"2nd",vals_kwd1,months,colour_list[1])
-logger.info("Kwd1 is %s, data %r" % (kwd1,vals_kwd1))
+logger.debug("Kwd1 is %s, data %r" % (kwd1,vals_kwd1))
 
 kwd2_c2 = kwd_count_for_m_minus_2[kwd2] if (kwd2 in kwd_count_for_m_minus_2) else 0
 kwd2_c1 = kwd_count_for_m_minus_1[kwd2] if (kwd2 in kwd_count_for_m_minus_1) else 0
 kwd2_c0 = kwd_count_for_month[kwd2]     # must have keyword as it came from this dictionary
 vals_kwd2=[kwd2_c2/useful_rows_in_m_2, kwd2_c1/useful_rows_in_m_1, kwd2_c0/useful_rows_in_m]
 file_linegraph_topic3 = file_graph_for_month_kwd(kwd2,"3rd",vals_kwd2,months,colour_list[2])
-logger.info("Kwd0 is %s, data %r" % (kwd2,vals_kwd2))
+logger.debug("Kwd0 is %s, data %r" % (kwd2,vals_kwd2))
 
 ## Build a subset of the dataframe for last 3 months that uses each of the top 3 kwds in this month
 df_for_3months = pd.concat([df_for_month,df_for_month_minus_1,df_for_month_minus_2])
@@ -603,14 +712,14 @@ replace_text_in_shape(slide_shapes,find="Topic2",use=kwd1,slidename="5th slide")
 replace_text_in_shape(slide_shapes,find="Topic3",use=kwd2,slidename="5th slide")
 
 #Add the line graphs and the donuts for each of the topics
-top=Inches(1.8); h=Inches(1.0); w=Inches(1.7)
-slide_shapes.add_picture(file_linegraph_topic1,Inches(0.7),top,height=h,width=w)
-slide_shapes.add_picture(file_linegraph_topic2,Inches(4.7),top,height=h,width=w)
-slide_shapes.add_picture(file_linegraph_topic3,Inches(8.7),top,height=h,width=w)
-top=Inches(1.7); h=Inches(1.1); w=Inches(2.25);
-slide_shapes.add_picture(file_donut_topic1,Inches(2.3),top,height=h,width=w)
-slide_shapes.add_picture(file_donut_topic2,Inches(6.35),top,height=h,width=w)
-slide_shapes.add_picture(file_donut_topic3,Inches(10.35),top,height=h,width=w)
+top=Mm(46); h=Mm(25); w=Mm(43)
+slide_shapes.add_picture(file_linegraph_topic1,Mm(18),top,height=h,width=w)
+slide_shapes.add_picture(file_linegraph_topic2,Mm(120),top,height=h,width=w)
+slide_shapes.add_picture(file_linegraph_topic3,Mm(220),top,height=h,width=w)
+top=Mm(43); h=Mm(28); w=Mm(57);
+slide_shapes.add_picture(file_donut_topic1,Mm(58),top,height=h,width=w)
+slide_shapes.add_picture(file_donut_topic2,Mm(160),top,height=h,width=w)
+slide_shapes.add_picture(file_donut_topic3,Mm(263),top,height=h,width=w)
 
 #Find where the placeholders are for the customer lists and update them
 df_for_kwd0_month0 = df_for_month.loc[found_word_list(df_for_month,kwd0)]
@@ -640,7 +749,7 @@ else:
 ################################################
 ## 9th slide: Now generate the Industry Insights donuts and top keyword lists
 ################################################
-logger.info(">>>> 9th slide: industries and how they broke down across the centres")
+logger.info(">>>> 9th slide: industries and how they show up across the centres")
 ## Generate the image for the big donut showing volume for all industries across the months
 industry_counts = df_for_3months["Updated Industry Sep6"].value_counts()
 file_donut_ind_vols = file_donut_pie_for_industries(industry_counts)
@@ -657,7 +766,7 @@ for ind in industry_list:
     df_for_ind[ind] = df_for_3months[df_for_3months["Updated Industry Sep6"]==ind]
     file_donut_for_ind[ind] = file_donut_pie_for_month(counts_by_centre(df_for_ind[ind]),ind)
     kwd_counts_for_ind[ind] = keywords_in_dataframe(df_for_ind[ind],vocab)
-    logger.info("Top keyword/counts for %s: %r" % (ind,kwd_counts_for_ind[ind].most_common(4)) )
+    logger.debug("Top keyword/counts for %s: %r" % (ind,kwd_counts_for_ind[ind].most_common(4)) )
 
 ## Now write out the charts and text on industry (9th) slide
 s = prs.slides[8]
@@ -671,18 +780,18 @@ new_run_in_slide(title_frame.paragraphs[0],text="Industry Insights "+earliest_mo
 
 #Add the one big donut showing volumes for each industry to the slide
 logger.info("Adding main donut to Industry Insights slide (9th slide)")
-left=Inches(1.7); top=Inches(1.9)
-slide_shapes.add_picture(file_donut_ind_vols,left,top,height=Inches(4.5),width=Inches(3.7))
+left=Mm(43); top=Mm(48)
+slide_shapes.add_picture(file_donut_ind_vols,left,top,height=Mm(115),width=Mm(94))
 
 #Add the individual industry donuts broken down by centre to the slide
 #Need to pick the top 5, excluding "Other", from the list in industry_list
 logger.info("Adding donuts for top industries in each centre (9th slide)")
-left=Inches(8.2); top=(Inches(1.20),Inches(2.30),Inches(3.40),Inches(4.50),Inches(5.60))
-h=Inches(1.0); w=Inches(2.05)
+left=Mm(208); top=(Mm(30),Mm(58),Mm(86),Mm(115),Mm(142))
+h=Mm(25); w=Mm(52)
 n=0 # used to count the number of industry pies we have placed (we can't use enumerate(industry_counts) as we don't always place a pie)
 for ind in industry_counts.index:
     if   (ind!="Other"):
-        logger.info("Writing %s as industry %i" %(industry_longnames[ind],n))
+        logger.debug("Writing %s as industry %i" %(industry_longnames[ind],n))
         #Write the industry name as the main title for this box
         replace_text_in_shape(slide_shapes,"Industry-{}".format(n),industry_longnames[ind],"9th slide")
         #Add the donut showing breakdown of centres that hosted this industry
@@ -721,10 +830,10 @@ df_accompanied = df_for_partners[ df_for_partners['Partner / Customer']=="Partne
 SI_count=[len(df_SI[df_SI.Ctr==c]) for c in centres]
 Channel_count=[len(df_channel[df_channel.Ctr==c]) for c in centres]
 Attended_count=[len(df_accompanied[df_accompanied.Ctr==c]) for c in centres]
-logger.info("Centres being looked at: %r" %(centres))
-logger.info("Volume by centre - partner: %r" %(Channel_count))
-logger.info("Volume by centre - SI: %r" %(SI_count))
-logger.info("Volume by centre - attended: %r" %(Attended_count))
+logger.debug("Centres being looked at: %r" %(centres))
+logger.debug("Volume by centre - partner: %r" %(Channel_count))
+logger.debug("Volume by centre - SI: %r" %(SI_count))
+logger.debug("Volume by centre - attended: %r" %(Attended_count))
 
 fig, ax = plt.subplots()
 fig.set_size_inches(5.5,2.2)
@@ -751,14 +860,17 @@ new_run_in_slide(title_frame.paragraphs[0],text="Partner Insights ("+earliest_mo
        fontname="Arial",fontsize=28)
 
 # Update the top 4 most common keywords, and their percentages
-logger.info("top 4 partner interests: %r" % (kwd_count_for_partners.most_common(4)))
+logger.debug("top 4 partner interests: %r" % (kwd_count_for_partners.most_common(4)))
+t=Mm(68)
+l=[Mm(30),Mm(68),Mm(103),Mm(140)]
 for n,p in enumerate(kwd_count_for_partners.most_common(4)):
     # p is (keyword: count) for each of the top 4 most common keywords
     replace_text_in_shape(slide_shapes,"Interest-{}".format(n),p[0],"10th slide")
+    add_icon(slide_shapes,p[0],top=t,left=l[n],small=True)
     replace_text_in_shape(slide_shapes,"Score-{}".format(n),"{0:.0f}%".format(100*p[1]/useful_rows_in_partners),"10th slide")
 
 # Place the horizontal bar graph
-slide_shapes.add_picture(file_hbar, Inches(0.9),Inches(4.4), height=Inches(2.2),width=Inches(5.5))
+slide_shapes.add_picture(file_hbar, Mm(23),Mm(112), height=Mm(56),width=Mm(140))
 
 ################################################
 ## 11th slide: Top interests and industries for last 6 months
@@ -775,14 +887,18 @@ kwd_counts_6m_for_top_inds={}
 commented_rows_for_6m={}
 
 for c in centres:
+    logger.info("Working on counts for {}".format(c))
     dfs_6m_ctr[c]=df_6months[df_6months.Ctr==c]
+    #First, the top keywords for that Centre
     kwd_counts_6m_ctr[c]=keywords_in_dataframe(dfs_6m_ctr[c],vocab)
+    logger.debug("Top keyword/counts %s: %r" % (c,kwd_counts_6m_ctr[c].most_common(5)) )
+    #Now the top keywords in each industry for that centre
     industry_counts_6m[c] = (dfs_6m_ctr[c])["Updated Industry Sep6"].value_counts()
     for ind in (industry_counts_6m[c]).index:
         this_df = dfs_6m_ctr[c][ dfs_6m_ctr[c]["Updated Industry Sep6"]==ind ]
         kwd_counts_6m_for_top_inds[(c,ind)]=keywords_in_dataframe(this_df, vocab)
         commented_rows_for_6m[(c,ind)]=count_rows_with_comments(this_df)
-        logger.info("Top keyword/counts in %s for %s: %r" % (c,ind,kwd_counts_6m_for_top_inds[(c,ind)].most_common(3)) )
+        logger.debug("Top keyword/counts in %s for %s: %r" % (c,ind,kwd_counts_6m_for_top_inds[(c,ind)].most_common(3)) )
 
 
 ## Build the slide: add the interests, industries, and per-industry interests, for each of the centres
@@ -797,28 +913,29 @@ new_run_in_slide(title_frame.paragraphs[0],text="Breakdown by centre ("+calendar
 
 #Update, by centre, the top interests, and the top industries with their top interests
 logger.info("Setting the per-centre top 5 interests, together with per-centre top 3 industries and their interests")
-for c in centres:
-
+top_pos=[Mm(48),Mm(73),Mm(102),Mm(127),Mm(152)]   #distances to top of icon for each row
+left_pos=[Mm(35),Mm(65),Mm(95),Mm(125),Mm(154)]   #distances to centre of icon for each row
+for row,ctr in enumerate(["PA","H","NY1","LON1","SNG"]):  #iterate the centres in the order they appear on the slide
     #First, the top interests for this centre
-    for n,p in enumerate(kwd_counts_6m_ctr[c].most_common(5)):
+    for col,p in enumerate(kwd_counts_6m_ctr[ctr].most_common(5)):
         # p is (keyword: count) for each of the keywords, so p[0] is the keyword itself
-        replace_text_in_shape(slide_shapes,"{}-interest-{}".format(c,n),p[0],"11th slide")
-
+        replace_text_in_shape(slide_shapes,"{}-interest-{}".format(ctr,col),p[0],"11th slide")
+        add_icon(slide_shapes,p[0],left=left_pos[col],top=top_pos[row],small=True)
     #Next, the top industries with their interests for this centre - industry_counts_6m[c] is already ordered highest->lowest count
     n=0  #count how many displayed - need to do this separately from the loop count, as we ignore "Other" as an industry group
-    for ind in industry_counts_6m[c].index:
+    for ind in industry_counts_6m[ctr].index:
         if   (ind!="Other"):
-            logger.info("For centre <%s> industry <%i> is <%s>" %(c,n,ind))
+            logger.debug("For centre <%s> industry <%i> is <%s>" %(ctr,n,ind))
             #Write the list of top interests for this industry
-            idx = find_text_in_shapes(slide_shapes,"{}-industry-{}".format(c,n))
+            idx = find_text_in_shapes(slide_shapes,"{}-industry-{}".format(ctr,n))
             if (idx>=0):
                 write_top_keywords(slide_shapes[idx].text_frame,
                                    ind,
-                                   kwd_counts_6m_for_top_inds[(c,ind)],
-                                   commented_rows_for_6m[(c,ind)]
+                                   kwd_counts_6m_for_top_inds[(ctr,ind)],
+                                   commented_rows_for_6m[(ctr,ind)]
                                   )
             else:
-                logger.error("Could not find <{}-industry-{}> placeholder on 11th slide".format(c,n))
+                logger.error("Could not find <{}-industry-{}> placeholder on 11th slide - idx={}".format(ctr,n,idx))
             n+=1   #increment the number of industries written out for this centre
         if (n>=3): break   #exit the loop after writing in 3 industries+interests
 
