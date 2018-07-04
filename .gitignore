@@ -1,0 +1,16 @@
+# in general, ignore the powerpoint files
+*.pptx
+# ...except the template ones
+!GCA_Customer_Insights_Month-Year.pptx
+!GCA_Centre_Insights_Month-Year - ctr.pptx
+
+# Ignore the excel files
+*.xlsx
+
+# Ignore the jupyter notebooks
+*.ipynb
+
+#ignore the subsidiary directories
+tmp/
+icons/
+.ipynb_checkpoints/

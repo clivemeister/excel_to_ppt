@@ -1,3 +1,13 @@
+""" Read the insights.xls file and conver to GCA_Customer_Insights_mmmm-yyyy.pptx
+
+    Typical usage to get Insights for June 2018 would be:
+        py excel_to_ppt.py -m 6 -y 2018
+
+    Uses the GCA_Customer_Insights_Month-Year.pptx as a template.
+    Uses the excel_to_ppt.ini file for the vocabulary of words, synonyms, colours to use, etc etc
+
+    Required packages: pandas, matplotlib, python-pptx, xlrd, wordcloud
+"""
 import pandas as pd
 from datetime import datetime, date
 import matplotlib.pyplot as plt
@@ -254,6 +264,7 @@ def found_word_list(df, kwd):
 
 def keywords_in_dataframe(df,keyword_list):
     """ Count each keyword in the dataframe's important columns
+        (currently these cols are defined in found_word_list() as wtlma and ai)
         Returns a Counter collection of (keyword:count)
     """
     import operator   #for sorted(), used in sorting items into OrderedDict
@@ -824,7 +835,7 @@ else:
 ################################################
 logger.info(">>>> 9th slide: industries and how they show up across the centres")
 ## Generate the image for the big donut showing volume for all industries across the months
-industry_counts = df_for_3months["Updated Industry Sep6"].value_counts()
+industry_counts = df_for_3months["Industry"].value_counts()
 file_donut_ind_vols = file_donut_pie_for_industries(industry_counts)
 
 ## Generate the individual donuts showing, for each industry, the spread across the centres
@@ -836,7 +847,7 @@ file_donut_for_ind={};
 kwd_counts_for_ind={}
 
 for ind in industry_list:
-    df_for_ind[ind] = df_for_3months[df_for_3months["Updated Industry Sep6"]==ind]
+    df_for_ind[ind] = df_for_3months[df_for_3months["Industry"]==ind]
     file_donut_for_ind[ind] = file_donut_pie_for_month(counts_by_centre(df_for_ind[ind]),ind)
     kwd_counts_for_ind[ind] = keywords_in_dataframe(df_for_ind[ind],vocab)
     logger.debug("Top keyword/counts for %s: %r" % (ind,kwd_counts_for_ind[ind].most_common(4)) )
@@ -956,7 +967,7 @@ df_6months = dataframe_for_6months(all_df, year=yyyy, month=mm)
 #and a dict of top 3 industries per centre and their keywords (where the key is a tuple of (centre, industry) )
 dfs_6m_ctr={}
 kwd_counts_6m_ctr={}
-industry_counts_6m = df_6months["Updated Industry Sep6"].value_counts()
+industry_counts_6m = df_6months["Industry"].value_counts()
 kwd_counts_6m_for_top_inds={}
 commented_rows_for_6m={}
 
@@ -967,9 +978,9 @@ for c in centres:
     kwd_counts_6m_ctr[c]=keywords_in_dataframe(dfs_6m_ctr[c],vocab)
     logger.debug("Top keyword/counts %s: %r" % (c,kwd_counts_6m_ctr[c].most_common(5)) )
     #Now the top keywords in each industry for that centre
-    industry_counts_6m[c] = (dfs_6m_ctr[c])["Updated Industry Sep6"].value_counts()
+    industry_counts_6m[c] = (dfs_6m_ctr[c])["Industry"].value_counts()
     for ind in (industry_counts_6m[c]).index:
-        this_df = dfs_6m_ctr[c][ dfs_6m_ctr[c]["Updated Industry Sep6"]==ind ]
+        this_df = dfs_6m_ctr[c][ dfs_6m_ctr[c]["Industry"]==ind ]
         kwd_counts_6m_for_top_inds[(c,ind)]=keywords_in_dataframe(this_df, vocab)
         commented_rows_for_6m[(c,ind)]=count_rows_with_comments(this_df)
         logger.debug("Top keyword/counts in %s for %s: %r" % (c,ind,kwd_counts_6m_for_top_inds[(c,ind)].most_common(3)) )
@@ -1027,7 +1038,7 @@ for row,ctr in enumerate(["PA","H","NY1","LON1","SNG"]):  #iterate the centres i
 ################################################
 logger.info(">>>> 13th slide: EBC specific industry volumes and top interests")
 ## Generate the image for the big donut showing volume for all industries across the months
-PA_industry_counts = dfs_6m_ctr["PA"]["Updated Industry Sep6"].value_counts()
+PA_industry_counts = dfs_6m_ctr["PA"]["Industry"].value_counts()
 file_donut_PA_ind_vols = file_donut_pie_for_industries(PA_industry_counts,center="PA")
 
 ## Build the slide
