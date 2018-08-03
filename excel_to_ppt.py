@@ -1,7 +1,7 @@
 """ Read the insights.xls file and conver to GCA_Customer_Insights_mmmm-yyyy.pptx
 
     Typical usage to get Insights for June 2018 would be:
-        py excel_to_ppt.py -m 6 -y 2018
+        py excel_to_ppt.py -m6 -y2018 -t
 
     Uses the GCA_Customer_Insights_Month-Year.pptx as a template.
     Uses the excel_to_ppt.ini file for the vocabulary of words, synonyms, colours to use, etc etc
@@ -24,7 +24,7 @@ import re
 import sys, getopt
 
 logger = logging.getLogger(__name__)
-##logger.setLevel(logging.WARNING)
+##logger.setLevel(logging.INFO)
 console=logging.StreamHandler()
 console.setLevel(logging.WARNING)
 formatter=logging.Formatter('%(asctime)s %(levelname)s %(message)s')
@@ -35,24 +35,29 @@ tmpdir = "tmp/"
 icondir = "icons/"
 excel_file='Insights.xlsx'
 stop_after_wordcheck = False
-yyyy,mm=date.today().year,date.today().month
+yyyy,mm=date.today().year,date.today().month-1
 
 def print_help():
     print("excel_to_ppt.py -ifile=<inputExcelFile>    default is Insights.xlsx")
     print("                --year=<yyyy>              year to process, default is current year")
-    print("                --m=<mm>                   month to process, default is current month")
+    print("                --month=<mm>               month to process, default is current month")
+    print("                -m<mm>                     month to process, e.g. -m7")
+    print("                -y<yyyy>                   year to process, e.g. -y2018")
     print("                -w                     stop after showing possible extra words")
     print("                -d                     turn on debugging trace")
-    print("                -i                     turn on information trace")
+    print("                -t                     turn on information trace")
+    print("For example, excel_to_ppt.py -m8 -y2018 -t")
     return
 
 if __name__=="__main__":
     logging.debug("Parsing arguments")
     try:
-        opts, args = getopt.getopt(sys.argv[1:],"hdwi:y:,m:",["ifile=","year=","month="])
-    except getopt.GetoptError:
+        opts, args = getopt.getopt(sys.argv[1:],"hdwti:y:m:",["ifile=","year=","month="])
+    except getopt.GetoptError as err:
+        print(err)
         print_help()
         sys.exit(2)
+    print("opt:",opts," and args:",args)    
     for opt, arg in opts:
         if opt == "-h":
             print_help()
@@ -60,7 +65,7 @@ if __name__=="__main__":
         elif opt == "-d":
             ##console.setLevel(logging.DEBUG)
             logger.setLevel(logging.DEBUG)
-        elif opt == "-i":
+        elif opt == "-t":
             ##console.setLevel(logging.INFO)
             logger.setLevel(logging.INFO)
         elif opt in ("--ifile"):
