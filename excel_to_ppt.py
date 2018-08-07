@@ -6,7 +6,8 @@
     Uses the GCA_Customer_Insights_Month-Year.pptx as a template.
     Uses the excel_to_ppt.ini file for the vocabulary of words, synonyms, colours to use, etc etc
 
-    Required packages: pandas, matplotlib, python-pptx, xlrd, wordcloud
+    Required packages: pandas, matplotlib, python-pptx, xlrd, wordcloud, vaderSentiment, requests
+    You can use 'pip install' to get these down.
 """
 import pandas as pd
 from datetime import datetime, date
@@ -65,7 +66,7 @@ if __name__=="__main__":
         elif opt == "-d":
             ##console.setLevel(logging.DEBUG)
             logger.setLevel(logging.DEBUG)
-        elif opt == "-v": // verbose level of messages printed
+        elif opt == "-v": # verbose level of messages printed
             ##console.setLevel(logging.INFO)
             logger.setLevel(logging.INFO)
         elif opt in ("--ifile"):
@@ -615,6 +616,44 @@ def add_icon(ss,icon_name,left,top,small=False):
         logger.warning("Could not find icon {}".format(icondir+icon_name+'.png'))
     return
 
+
+def sentiment_by_month(df, count, year, month):
+    # Calculate the sentiment by month for the last 'count' months from 'month' in 'year'
+    # Returns an array with the average compound sentiment score per month, from
+    # most recent month to oldest month (so July, June, May, in that order, etc)
+    from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+    assert (count<12),"only works for up to 12 months"   
+    analyzer = SentimentIntensityAnalyzer()
+    result=[]
+    for i in range(0,count):
+        m = month-i;
+        y = year;
+        if (m<=0):   
+            m += 12
+            y -= 1
+        month_df = dataframe_for_month(df, year=y, month=m)
+        avg_snt = tot_snt = {'neg': 0.0, 'neu':0.0, 'pos': 0.0, 'compound':0.0}
+        n=0
+        for index, row in month_df.iterrows():
+            cell = row["Customer Overall Comments"]
+            if (isinstance(cell, str)):
+                logger.debug("{} {:-<40}".format(index, cell)) 
+                snt = analyzer.polarity_scores(cell)
+                logger.debug("{}".format(str(snt)))
+                n += 1
+                tot_snt['neg'] += snt['neg']
+                tot_snt['neu'] += snt['neu']
+                tot_snt['pos'] += snt['pos']
+                tot_snt['compound'] += snt['compound']
+        if (n > 0):        
+            avg_snt['neg'] = round(tot_snt['neg'] / n, 3)         
+            avg_snt['neu'] = round(tot_snt['neu'] / n, 3)         
+            avg_snt['pos'] = round(tot_snt['pos'] / n, 3)         
+            avg_snt['compound'] = round(tot_snt['compound'] / n, 3)         
+        logger.info("Avg sentiment (n={}), month {}: {}".format(n,m,str(avg_snt)))
+        result.append(avg_snt['compound'])
+    return result
+
 logger.info("Importing excel file "+excel_file)
 all_df = pd.read_excel(open(excel_file,'rb'),header=8,usecols="A:S")
 
@@ -714,11 +753,11 @@ notes_tf.text = ("Found %i rows with comments in this month.\nTop ten keyword/co
 logger.info(">>>> 4th slide: three wordclouds for most recent 3 months")
 df_for_month_minus_1 = dataframe_for_month(all_df, year=year_for_mm_minus_1, month=mm_minus_1)
 kwd_count_for_m_minus_1 = keywords_in_dataframe(df_for_month_minus_1,vocab)
-logger.debug("Top keyword/counts for month %i : %r" % (mm_minus_1,kwd_count_for_m_minus_1.most_common(5)) )
+logger.info("Top keyword/counts for month %i : %r" % (mm_minus_1,kwd_count_for_m_minus_1.most_common(5)) )
 
 df_for_month_minus_2 = dataframe_for_month(all_df, year=year_for_mm_minus_2, month=mm_minus_2)
 kwd_count_for_m_minus_2 = keywords_in_dataframe(df_for_month_minus_2,vocab)
-logger.debug("Top keyword/counts for month %i : %r" % (mm_minus_2,kwd_count_for_m_minus_2.most_common(5)) )
+logger.info("Top keyword/counts for month %i : %r" % (mm_minus_2,kwd_count_for_m_minus_2.most_common(5)) )
 
 useful_rows_in_m_2 = count_rows_with_comments(df_for_month_minus_2)
 useful_rows_in_m_1 = count_rows_with_comments(df_for_month_minus_1)
@@ -967,6 +1006,10 @@ slide_shapes.add_picture(file_hbar, Mm(23),Mm(112), height=Mm(56),width=Mm(140))
 ################################################
 logger.info(">>>> 11th slide: top 5 interests, top 3 industries, and their top interests, by centre, for last 6 months")
 df_6months = dataframe_for_6months(all_df, year=yyyy, month=mm)
+
+# Calculate the sentiment by month for the last 6 months
+sentiment_6months = sentiment_by_month(df_6months, count=6, year=yyyy, month=mm)
+logger.info("Last 6 months avg customer sentiment: {}".format(sentiment_6months))
 
 #build a dictionary of dataframes subsetted by centre, a dictionary of keywords by centre,
 #and a dict of top 3 industries per centre and their keywords (where the key is a tuple of (centre, industry) )
