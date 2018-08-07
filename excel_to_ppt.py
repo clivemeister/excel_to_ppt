@@ -1,7 +1,7 @@
 """ Read the insights.xls file and conver to GCA_Customer_Insights_mmmm-yyyy.pptx
 
     Typical usage to get Insights for June 2018 would be:
-        py excel_to_ppt.py -m6 -y2018 -t
+        py excel_to_ppt.py -m6 -y2018 -v
 
     Uses the GCA_Customer_Insights_Month-Year.pptx as a template.
     Uses the excel_to_ppt.ini file for the vocabulary of words, synonyms, colours to use, etc etc
@@ -45,14 +45,14 @@ def print_help():
     print("                -y<yyyy>                   year to process, e.g. -y2018")
     print("                -w                     stop after showing possible extra words")
     print("                -d                     turn on debugging trace")
-    print("                -t                     turn on information trace")
+    print("                -v                     turn on verbose information")
     print("For example, excel_to_ppt.py -m8 -y2018 -t")
     return
 
 if __name__=="__main__":
     logging.debug("Parsing arguments")
     try:
-        opts, args = getopt.getopt(sys.argv[1:],"hdwti:y:m:",["ifile=","year=","month="])
+        opts, args = getopt.getopt(sys.argv[1:],"hdwvi:y:m:",["ifile=","year=","month="])
     except getopt.GetoptError as err:
         print(err)
         print_help()
@@ -65,7 +65,7 @@ if __name__=="__main__":
         elif opt == "-d":
             ##console.setLevel(logging.DEBUG)
             logger.setLevel(logging.DEBUG)
-        elif opt == "-t":
+        elif opt == "-v": // verbose level of messages printed
             ##console.setLevel(logging.INFO)
             logger.setLevel(logging.INFO)
         elif opt in ("--ifile"):
@@ -722,13 +722,13 @@ logger.debug("Top keyword/counts for month %i : %r" % (mm_minus_2,kwd_count_for_
 
 useful_rows_in_m_2 = count_rows_with_comments(df_for_month_minus_2)
 useful_rows_in_m_1 = count_rows_with_comments(df_for_month_minus_1)
-logger.info("Useful rows in months 2,1,0 are %i, %i, %i" % (useful_rows_in_m_2,useful_rows_in_m_1,useful_rows_in_m))
+logger.info("Number of useful rows in months -2,-1,0 are %i, %i, %i" % (useful_rows_in_m_2,useful_rows_in_m_1,useful_rows_in_m))
 
 file_wordcloud_for_month(kwd_count_for_m_minus_1, useful_rows_in_m_1, year=year_for_mm_minus_1,month=mm_minus_1)
 file_wordcloud_for_month(kwd_count_for_m_minus_2, useful_rows_in_m_2, year=year_for_mm_minus_2,month=mm_minus_2)
 
 ## Modifying 3-month wordcloud slide by adding pic for last 3 months' wordcloud
-logger.info("Adding three wordclouds in 4th slide")
+logger.debug("Adding three wordclouds in 4th slide")
 s = prs.slides[3]
 slide_shapes=s.shapes
 left=Mm(93)
@@ -787,7 +787,7 @@ file_donut_topic2 = file_donut_pie_for_month(counts_by_centre(df_for_kwd1),"2nd"
 file_donut_topic3 = file_donut_pie_for_month(counts_by_centre(df_for_kwd2),"3rd")
 
 ## Add the line graphs and donut pies to the Top 3 Customer Interests chart
-logger.info("Adding line graphs, donuts and customers to the Top 3 Customer Interests slide (5th slide)")
+logger.debug("Adding line graphs, donuts and customers to the Top 3 Customer Interests slide (5th slide)")
 s = prs.slides[4]
 slide_shapes=s.shapes
 #Update the title
@@ -868,13 +868,13 @@ new_run_in_slide(title_frame.paragraphs[0],text="Industry Insights "+earliest_mo
        fontname="Arial",fontsize=28)
 
 #Add the one big donut showing volumes for each industry to the slide
-logger.info("Adding main donut to Industry Insights slide (9th slide)")
+logger.debug("Adding main donut to Industry Insights slide (9th slide)")
 left=Mm(43); top=Mm(48)
 slide_shapes.add_picture(file_donut_ind_vols,left,top,height=Mm(115),width=Mm(94))
 
 #Add the individual industry donuts broken down by centre to the slide
 #Need to pick the top 5, excluding "Other", from the list in industry_list
-logger.info("Adding donuts for top industries in each centre (9th slide)")
+logger.debug("Adding donuts for top industries in each centre (9th slide)")
 left=Mm(208); top=(Mm(30),Mm(58),Mm(86),Mm(115),Mm(142))
 h=Mm(25); w=Mm(52)
 n=0 # used to count the number of industry pies we have placed (we can't use enumerate(industry_counts) as we don't always place a pie)
@@ -977,7 +977,7 @@ kwd_counts_6m_for_top_inds={}
 commented_rows_for_6m={}
 
 for c in centres:
-    logger.info("Working on counts for {}".format(c))
+    logger.debug("Working on counts for {}".format(c))
     dfs_6m_ctr[c]=df_6months[df_6months.Ctr==c]
     #First, the top keywords for that Centre
     kwd_counts_6m_ctr[c]=keywords_in_dataframe(dfs_6m_ctr[c],vocab)
@@ -992,7 +992,7 @@ for c in centres:
 
 
 ## Build the slide: add the interests, industries, and per-industry interests, for each of the centres
-logger.info("Setting the title ")
+logger.debug("Setting the title ")
 s = prs.slides[10]
 slide_shapes=s.shapes
 #Update the title
@@ -1002,7 +1002,7 @@ new_run_in_slide(title_frame.paragraphs[0],text="Breakdown by centre ("+calendar
        fontname="Arial",fontsize=28)
 
 #Update, by centre, the top interests, and the top industries with their top interests
-logger.info("Setting the per-centre top 5 interests, together with per-centre top 3 industries and their interests")
+logger.debug("Setting the per-centre top 5 interests, together with per-centre top 3 industries and their interests")
 top_pos=[Mm(48),Mm(73),Mm(102),Mm(127),Mm(152)]   #distances to top of icon for each row
 left_pos=[Mm(35),Mm(65),Mm(95),Mm(125),Mm(154)]   #distances to centre of icon for each row
 for row,ctr in enumerate(["PA","H","NY1","LON1","SNG"]):  #iterate the centres in the order they appear on the slide
@@ -1047,7 +1047,7 @@ PA_industry_counts = dfs_6m_ctr["PA"]["Industry"].value_counts()
 file_donut_PA_ind_vols = file_donut_pie_for_industries(PA_industry_counts,center="PA")
 
 ## Build the slide
-logger.info("Setting the title ")
+logger.debug("Setting the title ")
 s = prs.slides[12]
 slide_shapes=s.shapes
 #Update the title
@@ -1057,12 +1057,12 @@ new_run_in_slide(title_frame.paragraphs[0],text="EBC six month view ("+calendar.
        fontname="Arial",fontsize=28)
 
 #Add the one big donut showing volumes for each industry to the slide
-logger.info("Adding main donut to EBC six month view slide (13th slide)")
+logger.debug("Adding main donut to EBC six month view slide (13th slide)")
 left=Mm(43); top=Mm(48)
 slide_shapes.add_picture(file_donut_PA_ind_vols,left,top,height=Mm(115),width=Mm(94))
 
 #Update, by centre, the top interests, and the top industries with their top interests
-logger.info("Setting the per-centre top 5 interests, together with per-centre top 3 industries and their interests")
+logger.debug("Setting the per-centre top 5 interests, together with per-centre top 3 industries and their interests")
 left_pos=[Mm(180),Mm(210),Mm(240),Mm(270),Mm(299)]   #distances to centre of icon for each row
 #First, the top interests for PA
 for col,p in enumerate(kwd_counts_6m_ctr["PA"].most_common(5)):
