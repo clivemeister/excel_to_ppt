@@ -37,6 +37,7 @@ icondir = "icons/"
 excel_file='Insights.xlsx'
 stop_after_wordcheck = False
 yyyy,mm=date.today().year,date.today().month-1
+header_row=1
 
 def print_help():
     print("excel_to_ppt.py -ifile=<inputExcelFile>    default is Insights.xlsx")
@@ -45,6 +46,7 @@ def print_help():
     print("                -m<mm>                     month to process, e.g. -m7")
     print("                -y<yyyy>                   year to process, e.g. -y2018")
     print("                -w                     stop after showing possible extra words")
+    print("                -h<n>                  set which row of the spreadsheet is the first (header) row.  Default is 1.")
     print("                -d                     turn on debugging trace")
     print("                -v                     turn on verbose information")
     print("For example, excel_to_ppt.py -m8 -y2018 -t")
@@ -77,6 +79,9 @@ if __name__=="__main__":
         elif opt in ("-m", "--month"):
             logging.debug("Found argument mm with {}".format(arg))
             mm = int(arg)
+        elif opt in ("-h"):
+            logging.debug("Found argument header_row with {}".format(arg))
+            header_row = int(arg)
         elif opt == "-w":
             stop_after_wordcheck = True
 
@@ -208,13 +213,13 @@ def keyword_counts_in_series(series,keywords):
 def print_new_candidate_words(df,stop_words,top_n=25):
     """Print the top_n words in the relevant columns in the dataframe df that aren't in the
        stop_words
-       Input are a dataframe with columns 'wtlma' and 'ai',
+       Input are a dataframe with columns 'wtlma' and 'actions',
        a list in stop_words of single words to ignore, and the number of top words to show (default 25)
     """
     big_lst=[]
     for lst in list(df.wtlma.str.split()):
         if type(lst)==list: big_lst += lst
-    for lst in list(df.ai.str.split()):
+    for lst in list(df.actions.str.split()):
         if type(lst)==list: big_lst += lst
 
     all_ctr=Counter(big_lst)
@@ -257,30 +262,40 @@ def dataframe_for_6months(df, year=2017, month=1):
 
     return month_df
 
-def found_word_list(df, kwd):
-    """Passed a dataframe with columns of at least 'wtlma' and 'ai', together with a keyword
-       Return a list (actually a Series) with True wherever the dataframe contains kwd or a synonym in the relevant columns,
-       and False otherwise.  Can be used to subset the original dataframe to pick out the rows with the keyword in them:
-           df[found_word_list(df,"foo")]   => subset of df with "foo" in one of the columns
+def found_word_list(df_col_list, kwd):
+    """Passed a set of dataframe columns, together with a keyword
+       Return a list (actually a Series) with True wherever at least one of the dataframe columns
+       contains kwd or a synonym in the relevant columns, and False otherwise.
+       Can be used to subset the original dataframe to pick out the rows with the keyword in them:
+           df[found_word_list({df.wtlma, df.actions},"foo")]   => subset of df with "foo" in one of the columns
     """
-    strings_wtlma = replace_strings(df.wtlma, synonym_list)
-    strings_ai = replace_strings(df.ai, synonym_list)
-    found_list = bool_list_of_occurrences(strings_wtlma,kwd) | bool_list_of_occurrences(strings_ai,kwd)
+    found_list = [0] * df_col_list[0].count()   # set up with list of zeros, same length as first column in the list
+    for col in df_col_list:
+        tidied_strings = replace_strings(col, synonym_list)
+        found_list = bool_list_of_occurrences(tidied_strings, kwd) | found_list
+
     return found_list
 
-def keywords_in_dataframe(df,keyword_list):
-    """ Count each keyword in the dataframe's important columns
-        (currently these cols are defined in found_word_list() as wtlma and ai)
+def kwds_in_wtlma_actions(df,keyword_list):
+    """ Count each keyword in the dataframe's important columns, wtlma and actions.
         Returns a Counter collection of (keyword:count)
     """
-    import operator   #for sorted(), used in sorting items into OrderedDict
-
-    logger.debug("Counting occurrences of keywords for this month")
     counter_words_to_freq = Counter()
     for w in keyword_list:
-         counter_words_to_freq[w] += sum(found_word_list(df,w))
+         counter_words_to_freq[w] += sum(found_word_list([df.wtlma, df.actions],w))
 
     return counter_words_to_freq
+    
+def kwds_in_objectives(df,keyword_list):
+    """ Count each keyword in the dataframe's 'objectives' column.
+        Returns a Counter collection of (keyword:count)
+    """
+    counter_words_to_freq = Counter()
+    for w in keyword_list:
+         counter_words_to_freq[w] += sum(found_word_list([df.objectives],w))
+
+    return counter_words_to_freq
+
 
 def count_rows_with_comments(df):
     """ Count the number of rows in dataframe with a comment in either <Want to Learn More About> or <Action Items>
@@ -361,11 +376,11 @@ class GroupedColorFunc(object):
         return self.get_color_func(word)(word, **kwargs)
 
 def file_wordcloud_for_month(keywords_for_month, useful_rows_for_month, year=2017, month=8):
-    """Input is a keywords_for_month, a Counter, plus useful_rows_for_month, an integer, and year and month as integers
+    """Input is a keywords_for_month, a Counter, plus useful_rows_for_month, an integer, and year and month as integers.  
        Returns the filename where the wordcloud is stored
     """
     ##Build a wordcloud, using the wordcloud code from Andreas Mueller
-    # (to install, run "pip install wordcloud"
+    # (to install, run "pip install wordcloud")
     from wordcloud import WordCloud
     import matplotlib.pyplot as plt
     import os
@@ -622,7 +637,7 @@ def sentiment_by_month(df, count, year, month):
     # Returns an array with the average compound sentiment score per month, from
     # most recent month to oldest month (so July, June, May, in that order, etc)
     from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
-    assert (count<12),"only works for up to 12 months"   
+    assert (count<12),"only works for intervals of up to 12 months"   
     analyzer = SentimentIntensityAnalyzer()
     result=[]
     for i in range(0,count):
@@ -654,13 +669,43 @@ def sentiment_by_month(df, count, year, month):
         result.append(avg_snt['compound'])
     return result
 
-logger.info("Importing excel file "+excel_file)
-all_df = pd.read_excel(open(excel_file,'rb'),header=8,usecols="A:S")
+
+def top_sentiment_in_month(month_df, count=4):
+    # Return dictionary with top [count] comments for given month, by sentiment
+    # Each dictionary item is   {"user comment in full": compound_sentiment_score}
+    from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+    assert (isinstance(count,int)),"only works for values of count which are integers"
+    assert (count>0),"only works for values of count which are greater than zero"
+    analyzer = SentimentIntensityAnalyzer()
+    results={}
+    lowest_top_snt = 0.0  # lowest sentiment to make it into top N
+    found_count=0
+    for index, row in month_df.iterrows():
+        cell = row["Customer Overall Comments"]
+        if (isinstance(cell, str)):
+            this_snt = analyzer.polarity_scores(cell)
+            if (found_count < count):
+                # Haven't yet found [count] items to return, so this will automatically be added
+                found_count += 1 
+                results[cell] = this_snt['compound']
+            elif (this_snt["compound"] > lowest_top_snt):
+                # This item is more positive than lowest in top so far
+                # So find lowest scoring item already saved, and discard 
+                del results[ min(results, key=results.get) ]
+                results[cell]=this_snt['compound']
+            lowest_top_snt = min(results.values())
+    return results
+
+
+logger.info("Importing excel file "+excel_file+" with header in row "+str(header_row))
+# Note that "header" is zero-indexed, so must subtract one from header_row
+all_df = pd.read_excel(open(excel_file,'rb'),header=header_row-1,usecols="A:S")   
 
 logger.debug("Adding structured columns")
 all_df.insert(loc=0,column='date',value=all_df['Visit Date'].apply(make_date))
 all_df.insert(loc=1,column='wtlma',value=all_df['Want to Learn More About'].apply(tidy_text))
-all_df.insert(loc=2,column='ai',value=all_df['Action Items'].apply(tidy_text))
+all_df.insert(loc=2,column='actions',value=all_df['Action Items'].apply(tidy_text))
+all_df.insert(loc=3,column='objectives',value=all_df['Objectives'].apply(tidy_text))
 
 print_new_candidate_words(all_df,stop_words,top_n=40)
 if stop_after_wordcheck:
@@ -712,7 +757,7 @@ new_run_in_slide(text_frame.add_paragraph(),text='Learnings from '+this_month+' 
 ################################################
 logger.info("3rd slide: large wordcloud for this month, and top 3 keywords")
 df_for_month = dataframe_for_month(all_df, year=yyyy, month=mm)
-kwd_count_for_month = keywords_in_dataframe(df_for_month,vocab)
+kwd_count_for_month = kwds_in_wtlma_actions(df_for_month,vocab)
 useful_rows_in_m = count_rows_with_comments(df_for_month)
 logger.info("Top keyword/counts for month %i : %r" % (mm,kwd_count_for_month.most_common(5)) )
 file_wordcloud_for_month(kwd_count_for_month, useful_rows_in_m,
@@ -752,11 +797,11 @@ notes_tf.text = ("Found %i rows with comments in this month.\nTop ten keyword/co
 ################################################
 logger.info(">>>> 4th slide: three wordclouds for most recent 3 months")
 df_for_month_minus_1 = dataframe_for_month(all_df, year=year_for_mm_minus_1, month=mm_minus_1)
-kwd_count_for_m_minus_1 = keywords_in_dataframe(df_for_month_minus_1,vocab)
+kwd_count_for_m_minus_1 = kwds_in_wtlma_actions(df_for_month_minus_1,vocab)
 logger.info("Top keyword/counts for month %i : %r" % (mm_minus_1,kwd_count_for_m_minus_1.most_common(5)) )
 
 df_for_month_minus_2 = dataframe_for_month(all_df, year=year_for_mm_minus_2, month=mm_minus_2)
-kwd_count_for_m_minus_2 = keywords_in_dataframe(df_for_month_minus_2,vocab)
+kwd_count_for_m_minus_2 = kwds_in_wtlma_actions(df_for_month_minus_2,vocab)
 logger.info("Top keyword/counts for month %i : %r" % (mm_minus_2,kwd_count_for_m_minus_2.most_common(5)) )
 
 useful_rows_in_m_2 = count_rows_with_comments(df_for_month_minus_2)
@@ -815,9 +860,10 @@ logger.debug("Kwd0 is %s, data %r" % (kwd2,vals_kwd2))
 
 ## Build a subset of the dataframe for last 3 months that uses each of the top 3 kwds in this month
 df_for_3months = pd.concat([df_for_month,df_for_month_minus_1,df_for_month_minus_2])
-df_for_kwd0 = df_for_3months.loc[found_word_list(df_for_3months,kwd0)]
-df_for_kwd1 = df_for_3months.loc[found_word_list(df_for_3months,kwd1)]
-df_for_kwd2 = df_for_3months.loc[found_word_list(df_for_3months,kwd2)]
+col_list = [df_for_3months.actions, df_for_3months.wtlma]  # list of columns to search for kwds
+df_for_kwd0 = df_for_3months.loc[found_word_list(col_list,kwd0)]
+df_for_kwd1 = df_for_3months.loc[found_word_list(col_list,kwd1)]
+df_for_kwd2 = df_for_3months.loc[found_word_list(col_list,kwd2)]
 
 ## Create donut pies showing split of visits expressing interest in top 3 topics by centre over last 3 months
 kwd0_counts = counts_by_centre(df_for_kwd0)
@@ -850,9 +896,10 @@ slide_shapes.add_picture(file_donut_topic2,Mm(160),top,height=h,width=w)
 slide_shapes.add_picture(file_donut_topic3,Mm(263),top,height=h,width=w)
 
 #Find where the placeholders are for the customer lists and update them
-df_for_kwd0_month0 = df_for_month.loc[found_word_list(df_for_month,kwd0)]
-df_for_kwd1_month0 = df_for_month.loc[found_word_list(df_for_month,kwd1)]
-df_for_kwd2_month0 = df_for_month.loc[found_word_list(df_for_month,kwd2)]
+col_list = [df_for_month.actions, df_for_month.wtlma]  # list of columns to search for kwds
+df_for_kwd0_month0 = df_for_month.loc[found_word_list(col_list,kwd0)]
+df_for_kwd1_month0 = df_for_month.loc[found_word_list(col_list,kwd1)]
+df_for_kwd2_month0 = df_for_month.loc[found_word_list(col_list,kwd2)]
 i = find_text_in_shapes(slide_shapes,"Customers1")
 if (i>=0):
     logger.debug("Writing list of %i customers for first keyword" % (len(df_for_kwd0)))
@@ -862,14 +909,14 @@ else:
 
 i = find_text_in_shapes(slide_shapes,"Customers2")
 if (i>=0):
-    logger.debug("Writing list of",len(df_for_kwd1),"customers for second keyword")
+    logger.debug("Writing list of %i customers for second keyword" % (len(df_for_kwd1)))
     write_customer_list(df_for_kwd1_month0,slide_shapes[i].text_frame)
 else:
     logger.error("Could not find Customers2 placeholder")
 
 i = find_text_in_shapes(slide_shapes,"Customers3")
 if (i>=0):
-    logger.debug("Writing list of",len(df_for_kwd2),"customers for third keyword")
+    logger.debug("Writing list of %i customers for third keyword" % (len(df_for_kwd2)))
     write_customer_list(df_for_kwd2_month0,slide_shapes[i].text_frame)
 else:
     logger.error("Could not find Customers3 placeholder")
@@ -890,10 +937,11 @@ df_for_ind={};
 file_donut_for_ind={};
 kwd_counts_for_ind={}
 
+logger.info("Generating dataframes for each industry for last 3 months")
 for ind in industry_list:
     df_for_ind[ind] = df_for_3months[df_for_3months["Industry"]==ind]
     file_donut_for_ind[ind] = file_donut_pie_for_month(counts_by_centre(df_for_ind[ind]),ind)
-    kwd_counts_for_ind[ind] = keywords_in_dataframe(df_for_ind[ind],vocab)
+    kwd_counts_for_ind[ind] = kwds_in_wtlma_actions(df_for_ind[ind],vocab)
     logger.debug("Top keyword/counts for %s: %r" % (ind,kwd_counts_for_ind[ind].most_common(4)) )
 
 ## Now write out the charts and text on industry (9th) slide
@@ -916,6 +964,7 @@ slide_shapes.add_picture(file_donut_ind_vols,left,top,height=Mm(115),width=Mm(94
 logger.debug("Adding donuts for top industries in each centre (9th slide)")
 left=Mm(208); top=(Mm(30),Mm(58),Mm(86),Mm(115),Mm(142))
 h=Mm(25); w=Mm(52)
+logger.info("Generating pie charts for top 5 industries")
 n=0 # used to count the number of industry pies we have placed (we can't use enumerate(industry_counts) as we don't always place a pie)
 for ind in industry_counts.index:
     if   (ind!="Other"):
@@ -947,7 +996,7 @@ df_for_partners = df_for_3months.loc[ ( df_for_3months['Account Type'].isin(["Ch
                                         & (df_for_3months['Partner / Customer']!="Customer")
                                       ) | (df_for_3months['Partner / Customer']=="Partner")
                                     ]
-kwd_count_for_partners = keywords_in_dataframe(df_for_partners,vocab)
+kwd_count_for_partners = kwds_in_wtlma_actions(df_for_partners,vocab)
 useful_rows_in_partners = count_rows_with_comments(df_for_partners)
 
 df_channel = df_for_partners[ df_for_partners['Account Type']=="Channel/ Reseller" ]
@@ -1009,7 +1058,10 @@ df_6months = dataframe_for_6months(all_df, year=yyyy, month=mm)
 
 # Calculate the sentiment by month for the last 6 months
 sentiment_6months = sentiment_by_month(df_6months, count=6, year=yyyy, month=mm)
-logger.info("Last 6 months avg customer sentiment: {}".format(sentiment_6months))
+logger.info("Last 6 months avg customer sentiment: {}".format(sentiment_6months))  
+# Get top scoring comments for this month
+top_comments_in_month = top_sentiment_in_month(df_for_month,count=4)
+logger.info(top_comments_in_month)
 
 #build a dictionary of dataframes subsetted by centre, a dictionary of keywords by centre,
 #and a dict of top 3 industries per centre and their keywords (where the key is a tuple of (centre, industry) )
@@ -1023,13 +1075,13 @@ for c in centres:
     logger.debug("Working on counts for {}".format(c))
     dfs_6m_ctr[c]=df_6months[df_6months.Ctr==c]
     #First, the top keywords for that Centre
-    kwd_counts_6m_ctr[c]=keywords_in_dataframe(dfs_6m_ctr[c],vocab)
+    kwd_counts_6m_ctr[c]=kwds_in_wtlma_actions(dfs_6m_ctr[c],vocab)
     logger.debug("Top keyword/counts %s: %r" % (c,kwd_counts_6m_ctr[c].most_common(5)) )
     #Now the top keywords in each industry for that centre
     industry_counts_6m[c] = (dfs_6m_ctr[c])["Industry"].value_counts()
     for ind in (industry_counts_6m[c]).index:
         this_df = dfs_6m_ctr[c][ dfs_6m_ctr[c]["Industry"]==ind ]
-        kwd_counts_6m_for_top_inds[(c,ind)]=keywords_in_dataframe(this_df, vocab)
+        kwd_counts_6m_for_top_inds[(c,ind)]=kwds_in_wtlma_actions(this_df, vocab)
         commented_rows_for_6m[(c,ind)]=count_rows_with_comments(this_df)
         logger.debug("Top keyword/counts in %s for %s: %r" % (c,ind,kwd_counts_6m_for_top_inds[(c,ind)].most_common(3)) )
 
@@ -1130,6 +1182,60 @@ for ind in industry_counts_6m["PA"].index:
         n+=1   #increment the number of industries written out for this centre
     if (n>=3): break   #exit the loop after writing in 3 industries+interests
 
+################################################
+## 14th slide: 3 months of wordclouds based on keywords in objectives
+################################################
+logger.info("14th slide: wordcloud for 3 months, based on Objectives")
+df_for_month = dataframe_for_month(all_df, year=yyyy, month=mm)
+kwd_count_for_month = kwds_in_objectives(df_for_month,vocab)
+useful_rows_in_m = count_rows_with_comments(df_for_month)
+logger.info("Top keyword/counts for month %i : %r" % (mm,kwd_count_for_month.most_common(5)) )
+file_wordcloud_for_month(kwd_count_for_month, useful_rows_in_m,
+                         year=yyyy,month=mm)
+
+df_for_month_minus_1 = dataframe_for_month(all_df, year=year_for_mm_minus_1, month=mm_minus_1)
+kwd_count_for_m_minus_1 = kwds_in_objectives(df_for_month_minus_1,vocab)
+logger.info("Top keyword/counts for month %i : %r" % (mm_minus_1,kwd_count_for_m_minus_1.most_common(5)) )
+
+df_for_month_minus_2 = dataframe_for_month(all_df, year=year_for_mm_minus_2, month=mm_minus_2)
+kwd_count_for_m_minus_2 = kwds_in_objectives(df_for_month_minus_2,vocab)
+logger.info("Top keyword/counts for month %i : %r" % (mm_minus_2,kwd_count_for_m_minus_2.most_common(5)) )
+
+useful_rows_in_m_2 = count_rows_with_comments(df_for_month_minus_2)
+useful_rows_in_m_1 = count_rows_with_comments(df_for_month_minus_1)
+logger.info("Number of useful rows in months -2,-1,0 are %i, %i, %i" % (useful_rows_in_m_2,useful_rows_in_m_1,useful_rows_in_m))
+
+file_wordcloud_for_month(kwd_count_for_m_minus_1, useful_rows_in_m_1, year=year_for_mm_minus_1,month=mm_minus_1)
+file_wordcloud_for_month(kwd_count_for_m_minus_2, useful_rows_in_m_2, year=year_for_mm_minus_2,month=mm_minus_2)
+
+## Modifying 3-month wordcloud slide by adding pic for last 3 months' wordcloud
+logger.debug("Adding three wordclouds in 14th slide")
+s = prs.slides[13]
+slide_shapes=s.shapes
+left=Mm(93)
+top=Mm(36)
+h=Mm(38)
+slide_shapes.add_picture(tmpdir+"wordcloud-"+calendar.month_name[mm_minus_2]+".png",
+                         left,top,height=h)
+top=Mm(83)
+slide_shapes.add_picture(tmpdir+"wordcloud-"+calendar.month_name[mm_minus_1]+".png",
+                         left,top,height=h)
+top=Mm(128)
+slide_shapes.add_picture(tmpdir+"wordcloud-"+this_month+".png",
+                         left,top,height=h)
+#Find where the placeholders are for the keywords whose frequency we are graphing and update them
+replace_text_in_shape(slide_shapes,find="Month-2",use=calendar.month_name[mm_minus_2],slidename="14th slide")
+replace_text_in_shape(slide_shapes,find="Month-1",use=calendar.month_name[mm_minus_1],slidename="14th slide")
+replace_text_in_shape(slide_shapes,find="Month-0",use=calendar.month_name[mm],slidename="14th slide")
+
+notes_for_slide = s.notes_slide
+notes_tf = notes_for_slide.notes_text_frame
+notes_tf.text = ("%i rows with objectives in %s: Top keywords \n%r\n" %\
+                    (useful_rows_in_m,this_month,kwd_count_for_month.most_common(10)) )
+notes_tf.text += ("%i rows with objectives in %s: Top keywords \n%r\n" %\
+                    (useful_rows_in_m_1,calendar.month_name[mm_minus_1],kwd_count_for_m_minus_1.most_common(10)) )
+notes_tf.text += ("%i rows with objectives in %s: Top keywords \n%r\n" %\
+                    (useful_rows_in_m_2,calendar.month_name[mm_minus_2],kwd_count_for_m_minus_2.most_common(10)) )
 
 ################################################
 ## Close the source presentations

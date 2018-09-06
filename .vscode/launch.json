@@ -5,13 +5,13 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Python: Current File, month 7",
+            "name": "Python: Current File, month 7, verbose",
             "type": "python",
             "request": "launch",
             "program": "${workspaceFolder}/excel_to_ppt.py",
             "args": [
-                "-m",
-                "7"
+                "-m7",
+                "-v"
             ]
         },
         {
