@@ -25,12 +25,7 @@ import re
 import sys, getopt
 
 logger = logging.getLogger(__name__)
-##logger.setLevel(logging.INFO)
-console=logging.StreamHandler()
-console.setLevel(logging.WARNING)
-formatter=logging.Formatter('%(asctime)s %(levelname)s %(message)s')
-console.setFormatter(formatter)
-logger.addHandler(console)
+logger.setLevel(logging.INFO)
 
 tmpdir = "tmp/"
 icondir = "icons/"
@@ -48,7 +43,7 @@ def print_help():
     print("                -w                     stop after showing possible extra words")
     print("                -h<n>                  set which row of the spreadsheet is the first (header) row.  Default is 1.")
     print("                -d                     turn on debugging trace")
-    print("                -v                     turn on verbose information")
+    print("                -q                     turn on quiet mode - shows only information")
     print("For example, excel_to_ppt.py -m8 -y2018 -t")
     return
 
@@ -60,17 +55,15 @@ if __name__=="__main__":
         print(err)
         print_help()
         sys.exit(2)
-    print("opt:",opts," and args:",args)    
+    logger.debug("opt:",opts," and args:",args)    
     for opt, arg in opts:
         if opt == "-h":
             print_help()
             sys.exit()
         elif opt == "-d":
-            ##console.setLevel(logging.DEBUG)
             logger.setLevel(logging.DEBUG)
-        elif opt == "-v": # verbose level of messages printed
-            ##console.setLevel(logging.INFO)
-            logger.setLevel(logging.INFO)
+        elif opt == "-q": # lowest level of messages printed
+            logger.setLevel(logging.WARNING)
         elif opt in ("--ifile"):
             excel_file = arg
         elif opt in ("-y","--year"):
@@ -224,8 +217,8 @@ def print_new_candidate_words(df,stop_words,top_n=25):
 
     all_ctr=Counter(big_lst)
     for s in stop_words: del all_ctr[s]
-    print("Common words which are possible candidates for new keywords:")
-    print(all_ctr.most_common(20))
+    logger.info("Common words which are possible candidates for new keywords:")
+    logger.info(all_ctr.most_common(20))
     return
 
 def dataframe_for_month(df, year=2017, month=1):
@@ -937,7 +930,7 @@ df_for_ind={};
 file_donut_for_ind={};
 kwd_counts_for_ind={}
 
-logger.info("Generating dataframes for each industry for last 3 months")
+logger.debug("Generating dataframes for each industry for last 3 months")
 for ind in industry_list:
     df_for_ind[ind] = df_for_3months[df_for_3months["Industry"]==ind]
     file_donut_for_ind[ind] = file_donut_pie_for_month(counts_by_centre(df_for_ind[ind]),ind)
@@ -964,7 +957,7 @@ slide_shapes.add_picture(file_donut_ind_vols,left,top,height=Mm(115),width=Mm(94
 logger.debug("Adding donuts for top industries in each centre (9th slide)")
 left=Mm(208); top=(Mm(30),Mm(58),Mm(86),Mm(115),Mm(142))
 h=Mm(25); w=Mm(52)
-logger.info("Generating pie charts for top 5 industries")
+logger.debug("Generating pie charts for top 5 industries")
 n=0 # used to count the number of industry pies we have placed (we can't use enumerate(industry_counts) as we don't always place a pie)
 for ind in industry_counts.index:
     if   (ind!="Other"):
@@ -1022,7 +1015,7 @@ ax.barh(y,channel_plus_SI, height=0.35, color=colour_list[0],tick_label=centres_
 ax.barh(y,Attended_count, height=0.35, left=channel_plus_SI,color=colour_list[2])
 ax.legend(["Channel/ Reseller/ SI","Partner attended with customer"],loc='lower center',ncol=3,bbox_to_anchor=(0.5,-0.4))
 ax.get_xaxis().set_visible(False)
-file_hbar = "barh-PartnerVolumes.png"
+file_hbar = tmpdir+"barh-PartnerVolumes.png"
 fig.savefig(file_hbar,bbox_inches="tight")
 
 plt.close(fig)
@@ -1058,10 +1051,9 @@ df_6months = dataframe_for_6months(all_df, year=yyyy, month=mm)
 
 # Calculate the sentiment by month for the last 6 months
 sentiment_6months = sentiment_by_month(df_6months, count=6, year=yyyy, month=mm)
-logger.info("Last 6 months avg customer sentiment: {}".format(sentiment_6months))  
 # Get top scoring comments for this month
 top_comments_in_month = top_sentiment_in_month(df_for_month,count=4)
-logger.info(top_comments_in_month)
+logger.debug(top_comments_in_month)
 
 #build a dictionary of dataframes subsetted by centre, a dictionary of keywords by centre,
 #and a dict of top 3 industries per centre and their keywords (where the key is a tuple of (centre, industry) )
@@ -1072,7 +1064,7 @@ kwd_counts_6m_for_top_inds={}
 commented_rows_for_6m={}
 
 for c in centres:
-    logger.debug("Working on counts for {}".format(c))
+    logger.info("Working on counts for {}".format(c))
     dfs_6m_ctr[c]=df_6months[df_6months.Ctr==c]
     #First, the top keywords for that Centre
     kwd_counts_6m_ctr[c]=kwds_in_wtlma_actions(dfs_6m_ctr[c],vocab)
@@ -1097,7 +1089,7 @@ new_run_in_slide(title_frame.paragraphs[0],text="Breakdown by centre ("+calendar
        fontname="Arial",fontsize=28)
 
 #Update, by centre, the top interests, and the top industries with their top interests
-logger.debug("Setting the per-centre top 5 interests, together with per-centre top 3 industries and their interests")
+logger.info("For each centre, getting top 5 interests, and top 3 industries and their interests.")
 top_pos=[Mm(48),Mm(73),Mm(102),Mm(127),Mm(152)]   #distances to top of icon for each row
 left_pos=[Mm(35),Mm(65),Mm(95),Mm(125),Mm(154)]   #distances to centre of icon for each row
 for row,ctr in enumerate(["PA","H","NY1","LON1","SNG"]):  #iterate the centres in the order they appear on the slide
@@ -1185,25 +1177,25 @@ for ind in industry_counts_6m["PA"].index:
 ################################################
 ## 14th slide: 3 months of wordclouds based on keywords in objectives
 ################################################
-logger.info("14th slide: wordcloud for 3 months, based on Objectives")
+logger.info(">>>> 14th slide: wordcloud for 3 months, based on Objectives")
 df_for_month = dataframe_for_month(all_df, year=yyyy, month=mm)
 kwd_count_for_month = kwds_in_objectives(df_for_month,vocab)
 useful_rows_in_m = count_rows_with_comments(df_for_month)
-logger.info("Top keyword/counts for month %i : %r" % (mm,kwd_count_for_month.most_common(5)) )
+logger.debug("Top keyword/counts for month %i : %r" % (mm,kwd_count_for_month.most_common(5)) )
 file_wordcloud_for_month(kwd_count_for_month, useful_rows_in_m,
                          year=yyyy,month=mm)
 
 df_for_month_minus_1 = dataframe_for_month(all_df, year=year_for_mm_minus_1, month=mm_minus_1)
 kwd_count_for_m_minus_1 = kwds_in_objectives(df_for_month_minus_1,vocab)
-logger.info("Top keyword/counts for month %i : %r" % (mm_minus_1,kwd_count_for_m_minus_1.most_common(5)) )
+logger.debug("Top keyword/counts for month %i : %r" % (mm_minus_1,kwd_count_for_m_minus_1.most_common(5)) )
 
 df_for_month_minus_2 = dataframe_for_month(all_df, year=year_for_mm_minus_2, month=mm_minus_2)
 kwd_count_for_m_minus_2 = kwds_in_objectives(df_for_month_minus_2,vocab)
-logger.info("Top keyword/counts for month %i : %r" % (mm_minus_2,kwd_count_for_m_minus_2.most_common(5)) )
+logger.debug("Top keyword/counts for month %i : %r" % (mm_minus_2,kwd_count_for_m_minus_2.most_common(5)) )
 
 useful_rows_in_m_2 = count_rows_with_comments(df_for_month_minus_2)
 useful_rows_in_m_1 = count_rows_with_comments(df_for_month_minus_1)
-logger.info("Number of useful rows in months -2,-1,0 are %i, %i, %i" % (useful_rows_in_m_2,useful_rows_in_m_1,useful_rows_in_m))
+logger.debug("Number of useful rows in months -2,-1,0 are %i, %i, %i" % (useful_rows_in_m_2,useful_rows_in_m_1,useful_rows_in_m))
 
 file_wordcloud_for_month(kwd_count_for_m_minus_1, useful_rows_in_m_1, year=year_for_mm_minus_1,month=mm_minus_1)
 file_wordcloud_for_month(kwd_count_for_m_minus_2, useful_rows_in_m_2, year=year_for_mm_minus_2,month=mm_minus_2)
