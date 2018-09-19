@@ -5,13 +5,13 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Python: Current File, month 7, verbose",
+            "name": "Python: Current File, month 8, debugging log",
             "type": "python",
             "request": "launch",
             "program": "${workspaceFolder}/excel_to_ppt.py",
             "args": [
-                "-m7",
-                "-v"
+                "-m8",
+                "-d"
             ]
         },
         {
@@ -37,21 +37,6 @@
             "request": "launch",
             "program": "${file}",
             "console": "externalTerminal"
-        },
-        {
-            "name": "Python: Django",
-            "type": "python",
-            "request": "launch",
-            "program": "${workspaceFolder}/manage.py",
-            "args": [
-                "runserver",
-                "--noreload",
-                "--nothreading"
-            ],
-            "debugOptions": [
-                "RedirectOutput",
-                "Django"
-            ]
         },
         {
             "name": "Python: Flask (0.11.x or later)",

@@ -33,6 +33,7 @@ excel_file='Insights.xlsx'
 stop_after_wordcheck = False
 yyyy,mm=date.today().year,date.today().month-1
 header_row=1
+oldMode_1 = False
 
 def print_help():
     print("excel_to_ppt.py -ifile=<inputExcelFile>    default is Insights.xlsx")
@@ -44,6 +45,7 @@ def print_help():
     print("                -h<n>                  set which row of the spreadsheet is the first (header) row.  Default is 1.")
     print("                -d                     turn on debugging trace")
     print("                -q                     turn on quiet mode - shows only information")
+    print("                -o1                    old mode 1: bar charts for partner utilisation, no wordcloud")
     print("For example, excel_to_ppt.py -m8 -y2018 -t")
     return
 
@@ -55,7 +57,7 @@ if __name__=="__main__":
         print(err)
         print_help()
         sys.exit(2)
-    logger.debug("opt:",opts," and args:",args)    
+    logger.debug("opt: "+str(opts)+" and args: "+str(args))  
     for opt, arg in opts:
         if opt == "-h":
             print_help()
@@ -77,6 +79,12 @@ if __name__=="__main__":
             header_row = int(arg)
         elif opt == "-w":
             stop_after_wordcheck = True
+        elif opt == "-o":
+            logging.info("Working in old mode {}".format(arg))
+            if int(arg)==1:
+                oldMode_1 = True
+            #endif
+        #endif
 
 logger.info('Starting run for %i-%i...' % (yyyy,mm))
 
@@ -613,7 +621,7 @@ def add_icon(ss,icon_name,left,top,small=False):
     logger.debug("adding icon {}".format(icon_name))
     try:
         filename = icondir+icon_name+".png"
-        icon_width, icon_height = get_image_size(filename)
+        icon_width, _icon_height = get_image_size(filename)
         pixels_per_mm = 6
         if small:
             icon_width = 0.4*icon_width
@@ -625,6 +633,44 @@ def add_icon(ss,icon_name,left,top,small=False):
     return
 
 
+def file_wordcloud_for_partners(partner_counts):
+    """Input is partner_counts, a Counter of partner names and occurrences
+       Returns the filename where the wordcloud is stored
+    """
+    ##Build a wordcloud, using the wordcloud code from Andreas Mueller
+    from wordcloud import WordCloud
+    import matplotlib.pyplot as plt
+    import os
+
+    # Chop list after most common 30 partners (note, need to use dict() around most_common() as it returns a list)
+    p_counts = Counter(dict(partner_counts.most_common(30)))
+    # set font so 20% occurrence of top word uses 196 point font
+    percent = round(100*(p_counts.most_common(1)[0][1]/sum(p_counts.values())))
+    font_for_biggest_word = round( 196 * percent/20 )
+
+    font_path = "C:"+os.sep+"Windows"+os.sep+"Fonts"+os.sep+'arial.ttf'
+    logger.debug("Generating the wordcloud for Partners")
+    p_counts += Counter()    # remove any zero or negative counts from the list
+    wc_partners = WordCloud(font_path=font_path,
+                            width=1500,height=500,
+                            prefer_horizontal=1.0,
+                            relative_scaling=0.7,
+                            max_font_size=font_for_biggest_word,
+                            background_color="white",
+                            random_state=1
+                            ).generate_from_frequencies(p_counts)
+
+
+    # Build the generated image
+    plt.imshow(wc_partners,interpolation='bilinear')
+    plt.axis("off")
+    plt.figure()
+    # Save the wordcloud to file
+    filename = tmpdir+"partner_wordcloud.png"
+    plt.imsave(filename,wc_partners,format="png")
+    plt.close()
+    return filename
+
 def sentiment_by_month(df, count, year, month):
     # Calculate the sentiment by month for the last 'count' months from 'month' in 'year'
     # Returns an array with the average compound sentiment score per month, from
@@ -634,20 +680,18 @@ def sentiment_by_month(df, count, year, month):
     analyzer = SentimentIntensityAnalyzer()
     result=[]
     for i in range(0,count):
-        m = month-i;
-        y = year;
+        m = month-i
+        y = year
         if (m<=0):   
             m += 12
             y -= 1
         month_df = dataframe_for_month(df, year=y, month=m)
         avg_snt = tot_snt = {'neg': 0.0, 'neu':0.0, 'pos': 0.0, 'compound':0.0}
         n=0
-        for index, row in month_df.iterrows():
+        for _, row in month_df.iterrows():
             cell = row["Customer Overall Comments"]
             if (isinstance(cell, str)):
-                logger.debug("{} {:-<40}".format(index, cell)) 
                 snt = analyzer.polarity_scores(cell)
-                logger.debug("{}".format(str(snt)))
                 n += 1
                 tot_snt['neg'] += snt['neg']
                 tot_snt['neu'] += snt['neu']
@@ -673,7 +717,7 @@ def top_sentiment_in_month(month_df, count=4):
     results={}
     lowest_top_snt = 0.0  # lowest sentiment to make it into top N
     found_count=0
-    for index, row in month_df.iterrows():
+    for _, row in month_df.iterrows():
         cell = row["Customer Overall Comments"]
         if (isinstance(cell, str)):
             this_snt = analyzer.polarity_scores(cell)
@@ -883,7 +927,7 @@ top=Mm(46); h=Mm(25); w=Mm(43)
 slide_shapes.add_picture(file_linegraph_topic1,Mm(19),top,height=h,width=w)
 slide_shapes.add_picture(file_linegraph_topic2,Mm(120),top,height=h,width=w)
 slide_shapes.add_picture(file_linegraph_topic3,Mm(223),top,height=h,width=w)
-top=Mm(43); h=Mm(28); w=Mm(57);
+top=Mm(43); h=Mm(28); w=Mm(57)
 slide_shapes.add_picture(file_donut_topic1,Mm(58),top,height=h,width=w)
 slide_shapes.add_picture(file_donut_topic2,Mm(160),top,height=h,width=w)
 slide_shapes.add_picture(file_donut_topic3,Mm(263),top,height=h,width=w)
@@ -926,8 +970,8 @@ file_donut_ind_vols = file_donut_pie_for_industries(industry_counts)
 
 
 # set up some dictionaries to hold the industry datasets for later
-df_for_ind={};
-file_donut_for_ind={};
+df_for_ind={}
+file_donut_for_ind={}
 kwd_counts_for_ind={}
 
 logger.debug("Generating dataframes for each industry for last 3 months")
@@ -1005,20 +1049,23 @@ logger.debug("Volume by centre - partner: %r" %(Channel_count))
 logger.debug("Volume by centre - SI: %r" %(SI_count))
 logger.debug("Volume by centre - attended: %r" %(Attended_count))
 
-fig, ax = plt.subplots()
-fig.set_size_inches(5.5,2.2)
-y=(0.5,1,1.5,2,2.5)
 # @edit requested by Tina 26th Feb: combine SI with Channel/Reseller
 channel_plus_SI=[x+y for x,y in zip(Channel_count, SI_count)]
-ax.barh(y,channel_plus_SI, height=0.35, color=colour_list[0],tick_label=centres_long)
-#ax.barh(y,SI_count, height=0.35, left=Channel_count,color=colour_list[1])
-ax.barh(y,Attended_count, height=0.35, left=channel_plus_SI,color=colour_list[2])
-ax.legend(["Channel/ Reseller/ SI","Partner attended with customer"],loc='lower center',ncol=3,bbox_to_anchor=(0.5,-0.4))
-ax.get_xaxis().set_visible(False)
-file_hbar = tmpdir+"barh-PartnerVolumes.png"
-fig.savefig(file_hbar,bbox_inches="tight")
 
-plt.close(fig)
+if oldMode_1:
+    # switch back to old mode 1: use bar chart for customer attendance
+    fig, ax = plt.subplots()
+    fig.set_size_inches(5.5,2.2)
+    y=(0.5,1,1.5,2,2.5)
+    ax.barh(y,channel_plus_SI, height=0.35, color=colour_list[0],tick_label=centres_long)
+    # @edit requested by Tina 26feb18: take out separate SI count
+    #ax.barh(y,SI_count, height=0.35, left=Channel_count,color=colour_list[1])
+    ax.barh(y,Attended_count, height=0.35, left=channel_plus_SI,color=colour_list[2])
+    ax.legend(["Channel/ Reseller/ SI","Partner attended with customer"],loc='lower center',ncol=3,bbox_to_anchor=(0.5,-0.4))
+    ax.get_xaxis().set_visible(False)
+    file_hbar = tmpdir+"barh-PartnerVolumes.png"
+    fig.savefig(file_hbar,bbox_inches="tight")
+    plt.close(fig)
 
 ## Start to update the slide
 s = prs.slides[9]
@@ -1040,8 +1087,65 @@ for n,p in enumerate(kwd_count_for_partners.most_common(4)):
     add_icon(slide_shapes,p[0],top=t,left=l[n],small=True)
     replace_text_in_shape(slide_shapes,"Score-{}".format(n),"{0:.0f}%".format(100*p[1]/useful_rows_in_partners),"10th slide")
 
-# Place the horizontal bar graph
-slide_shapes.add_picture(file_hbar, Mm(23),Mm(112), height=Mm(56),width=Mm(140))
+if oldMode_1:
+    # Place the horizontal bar graph
+    slide_shapes.add_picture(file_hbar, Mm(23),Mm(112), height=Mm(56),width=Mm(140))
+else:
+    # @add: show pie charts and partner wordcloud - 19sep18
+    partner_file = "Visits with Partners.xlsx"
+    logger.info("Importing excel file for partners: "+partner_file+", with header in row "+str(header_row))
+    # Note that "header" is zero-indexed, so must subtract one from header_row
+    partner_df = pd.read_excel(open(partner_file,'rb'),header=0,usecols="A:H")   
+
+    # Subset the dataframe to the 3 month window we are intested in
+    logger.debug("Selecting rows from Partner file from %i-%i to %i-%i" % (year_for_mm_minus_2,mm_minus_2,yyyy,mm))
+    start_date = pd.Timestamp(year_for_mm_minus_2,mm_minus_2,1)
+    if (mm==12): # if current month is december, end date is 1st Jan nest year
+        end_date = pd.Timestamp(yyyy+1,1,1)
+    else: 
+        end_date = pd.Timestamp(yyyy,mm+1,1)
+    partner_3m_df = partner_df.loc[ (partner_df['Visit: Arrival Date']>= start_date) & (partner_df['Visit: Arrival Date'] < end_date) ]
+
+    # Get a Series indexed by centre names, with the number of unique visits 
+    grp_by_ctr_visitID = partner_3m_df.groupby(['Visit: Location','BMT Visit ID'])
+    ctr_counts = grp_by_ctr_visitID.size().groupby('Visit: Location').size()
+    # so now e.g ctr_counts['H'] is the number of unique visits to Houston represented in the Partners spreadie
+
+    Partner_present_count=[ctr_counts[c] for c in centres]
+    # Now subtract the visits already accounted for in other ways
+    #TODO for now only have 1 month, so fake 3 months by multiplying by 3
+    Partner_as_guest = [max(0,3*x-(y+z)) for x,y,z in zip(Partner_present_count, Attended_count, channel_plus_SI) ]
+    logger.debug("Volume by centre - guest: %r" %(Partner_as_guest))
+
+    from pptx.chart.data import ChartData
+    from pptx.enum.chart import XL_CHART_TYPE, XL_LEGEND_POSITION
+    for i,counts in enumerate(zip(channel_plus_SI, Attended_count, Partner_present_count)):
+        logger.debug("Adding pie for "+centres[i]+" with values "+str(counts))
+        chart_data=ChartData()
+        chart_data.categories = ["Partner training","Partner hosted","Partner attended"]
+        chart_data.add_series("set: "+str(i),counts)
+        left_x=Mm(20)
+        height=width=Mm(29)
+        if i==2:
+            chart = slide_shapes.add_chart(XL_CHART_TYPE.PIE, left_x-Mm(3),Mm(120), Mm(150),height+Mm(10), chart_data).chart   
+            chart.has_legend = True
+            chart.legend.position = XL_LEGEND_POSITION.BOTTOM
+            chart.legend.include_in_layout = 0 
+            chart.legend.font.size = Pt(14) 
+        else:
+            chart = slide_shapes.add_chart(XL_CHART_TYPE.PIE, left_x+i*width,Mm(120), width,height ,chart_data).chart
+            chart.has_legend = False
+
+    # Now generate wordcloud
+    grp_by_id_ptr = partner_3m_df.groupby(['BMT Visit ID', 'Attendee Company Name'])
+    ptr_counts = grp_by_id_ptr.size().groupby('Attendee Company Name').size()
+    ptr_counter=Counter()
+    for i,v in ptr_counts.iteritems():
+        ptr_counter[i]=v
+    file_wc_ptr=file_wordcloud_for_partners(ptr_counter)
+    # Add it to the slide template
+    slide_shapes.add_picture(file_wc_ptr, Mm(180),Mm(122), height=Mm(45),width=Mm(140))
+#endif
 
 ################################################
 ## 11th slide: Top interests and industries for last 6 months
@@ -1053,7 +1157,6 @@ df_6months = dataframe_for_6months(all_df, year=yyyy, month=mm)
 sentiment_6months = sentiment_by_month(df_6months, count=6, year=yyyy, month=mm)
 # Get top scoring comments for this month
 top_comments_in_month = top_sentiment_in_month(df_for_month,count=4)
-logger.debug(top_comments_in_month)
 
 #build a dictionary of dataframes subsetted by centre, a dictionary of keywords by centre,
 #and a dict of top 3 industries per centre and their keywords (where the key is a tuple of (centre, industry) )
