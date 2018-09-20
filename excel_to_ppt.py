@@ -170,7 +170,7 @@ def make_date(cell_val):
     return v
 
 def tidy_text(cell_val):
-    """Standardises the text in a cell:
+    """Standardises the text in a cell: removes lots of punctuation, and replaces synonyms by their root word
        Returns the tidied text
     """
     if type(cell_val) is str:
@@ -182,11 +182,6 @@ def tidy_text(cell_val):
     else:
         cell=""
     return cell
-
-def replace_strings(series,repl_dict):
-    for k,v in repl_dict.items():
-        series=series.str.replace(k,v)
-    return(series)
 
 def bool_list_of_occurrences(series,kwd):
     """Return a boolean list, 1 where an element of 'series' contains word 'kwd', else 0
@@ -264,7 +259,7 @@ def dataframe_for_6months(df, year=2017, month=1):
     return month_df
 
 def found_word_list(df_col_list, kwd):
-    """Passed a set of dataframe columns, together with a keyword
+    """Passed a set of dataframe columns (i.e, a set of Series), together with a keyword
        Return a list (actually a Series) with True wherever at least one of the dataframe columns
        contains kwd or a synonym in the relevant columns, and False otherwise.
        Can be used to subset the original dataframe to pick out the rows with the keyword in them:
@@ -272,8 +267,7 @@ def found_word_list(df_col_list, kwd):
     """
     found_list = [0] * df_col_list[0].count()   # set up with list of zeros, same length as first column in the list
     for col in df_col_list:
-        tidied_strings = replace_strings(col, synonym_list)
-        found_list = bool_list_of_occurrences(tidied_strings, kwd) | found_list
+        found_list = bool_list_of_occurrences(col, kwd) | found_list
 
     return found_list
 
@@ -993,14 +987,14 @@ new_run_in_slide(title_frame.paragraphs[0],text="Industry Insights "+earliest_mo
 
 #Add the one big donut showing volumes for each industry to the slide
 logger.debug("Adding main donut to Industry Insights slide (9th slide)")
-left=Mm(43); top=Mm(48)
-slide_shapes.add_picture(file_donut_ind_vols,left,top,height=Mm(115),width=Mm(94))
+left=Mm(42); top=Mm(48)
+slide_shapes.add_picture(file_donut_ind_vols,left,top,height=Mm(112),width=Mm(96))
 
 #Add the individual industry donuts broken down by centre to the slide
 #Need to pick the top 5, excluding "Other", from the list in industry_list
 logger.debug("Adding donuts for top industries in each centre (9th slide)")
 left=Mm(208); top=(Mm(30),Mm(58),Mm(86),Mm(115),Mm(142))
-h=Mm(25); w=Mm(52)
+h=Mm(25); w=Mm(48)
 logger.debug("Generating pie charts for top 5 industries")
 n=0 # used to count the number of industry pies we have placed (we can't use enumerate(industry_counts) as we don't always place a pie)
 for ind in industry_counts.index:
