@@ -36,16 +36,15 @@ header_row=1
 oldMode_1 = False
 
 def print_help():
-    print("excel_to_ppt.py -ifile=<inputExcelFile>    default is Insights.xlsx")
-    print("                --year=<yyyy>              year to process, default is current year")
-    print("                --month=<mm>               month to process, default is current month")
-    print("                -m<mm>                     month to process, e.g. -m7")
-    print("                -y<yyyy>                   year to process, e.g. -y2018")
-    print("                -w                     stop after showing possible extra words")
-    print("                -h<n>                  set which row of the spreadsheet is the first (header) row.  Default is 1.")
-    print("                -d                     turn on debugging trace")
-    print("                -q                     turn on quiet mode - shows only information")
-    print("                -o1                    old mode 1: bar charts for partner utilisation, no wordcloud")
+    print("excel_to_ppt.py  -ifile=<inputExcelFile>    default is Insights.xlsx")
+    print("                 --year=<yyyy>              year to process, default is current year")
+    print("                 --month=<mm>               month to process, default is current month")
+    print("                 -m<mm>                     month to process, e.g. -m7")
+    print("                 -y<yyyy>                   year to process, e.g. -y2018")
+    print("                 -w                     stop after showing possible extra words")
+    print("                 -h<n>                  set which row of the spreadsheet is the first (header) row.  Default is 1.")
+    print("                 -d                     turn on debugging trace")
+    print("                 -q                     turn on quiet mode - shows only information")
     print("For example, excel_to_ppt.py -m8 -y2018 -t")
     return
 
@@ -486,6 +485,25 @@ def file_donut_pie_for_industries(industries,center=""):
 
     plt.close(fig)
 
+    if False:
+        from pptx.chart.data import ChartData
+        from pptx.enum.chart import XL_CHART_TYPE, XL_LEGEND_POSITION
+        for i,counts in enumerate(zip(channel_plus_SI, Attended_count, Partner_present_count)):
+            logger.debug("Adding pie for "+centres[i]+" with values "+str(counts))
+            chart_data=ChartData()
+            chart_data.categories = ["Partner training","Partner hosted","Partner attended"]
+            chart_data.add_series("set: "+str(i),counts)
+            left_x=Mm(20)
+            height=width=Mm(29)
+            if i==2:
+                chart = slide_shapes.add_chart(XL_CHART_TYPE.PIE, left_x-Mm(3),Mm(120), Mm(150),height+Mm(10), chart_data).chart   
+                chart.has_legend = True
+                chart.legend.position = XL_LEGEND_POSITION.BOTTOM
+                chart.legend.include_in_layout = 0 
+                chart.legend.font.size = Pt(14) 
+            else:
+                chart = slide_shapes.add_chart(XL_CHART_TYPE.PIE, left_x+i*width,Mm(120), width,height ,chart_data).chart
+                chart.has_legend = False
     return filename
 
 def write_customer_list(df_for_kwd,text_frame):
@@ -653,7 +671,7 @@ def file_wordcloud_for_partners(partner_counts):
     logger.debug("Generating the wordcloud for Partners")
     p_counts += Counter()    # remove any zero or negative counts from the list
     wc_partners = WordCloud(font_path=font_path,
-                            width=1500,height=500,
+                            width=2000,height=500,
                             prefer_horizontal=1.0,
                             relative_scaling=0.7,
                             max_font_size=font_for_biggest_word,
@@ -1055,21 +1073,6 @@ logger.debug("Volume by centre - attended: %r" %(Attended_count))
 # @edit requested by Tina 26th Feb: combine SI with Channel/Reseller
 channel_plus_SI=[x+y for x,y in zip(Channel_count, SI_count)]
 
-if oldMode_1:
-    # switch back to old mode 1: use bar chart for customer attendance
-    fig, ax = plt.subplots()
-    fig.set_size_inches(5.5,2.2)
-    y=(0.5,1,1.5,2,2.5)
-    ax.barh(y,channel_plus_SI, height=0.35, color=colour_list[0],tick_label=centres_long)
-    # @edit requested by Tina 26feb18: take out separate SI count
-    #ax.barh(y,SI_count, height=0.35, left=Channel_count,color=colour_list[1])
-    ax.barh(y,Attended_count, height=0.35, left=channel_plus_SI,color=colour_list[2])
-    ax.legend(["Channel/ Reseller/ SI","Partner attended with customer"],loc='lower center',ncol=3,bbox_to_anchor=(0.5,-0.4))
-    ax.get_xaxis().set_visible(False)
-    file_hbar = tmpdir+"barh-PartnerVolumes.png"
-    fig.savefig(file_hbar,bbox_inches="tight")
-    plt.close(fig)
-
 ## Start to update the slide
 s = prs.slides[9]
 slide_shapes=s.shapes
@@ -1080,75 +1083,39 @@ title_frame.clear()
 new_run_in_slide(title_frame.paragraphs[0],text="Partner Insights ("+earliest_month+"-"+this_month+")",
        fontname="Arial",fontsize=28)
 
-# Update the top 4 most common keywords, and their percentages
-logger.debug("top 4 partner interests: %r" % (kwd_count_for_partners.most_common(4)))
-t=Mm(68)
-l=[Mm(32),Mm(69),Mm(106),Mm(142)]
-for n,p in enumerate(kwd_count_for_partners.most_common(4)):
-    # p is (keyword: count) for each of the top 4 most common keywords
+# Update the top 3 most common keywords, and their percentages
+logger.debug("top 3 partner interests: %r" % (kwd_count_for_partners.most_common(4)))
+t=Mm(66)
+l=[Mm(32),Mm(69),Mm(106)]
+for n,p in enumerate(kwd_count_for_partners.most_common(3)):
+    # p is (keyword: count) for each of the top most common keywords
     replace_text_in_shape(slide_shapes,"Interest-{}".format(n),p[0],"10th slide")
     add_icon(slide_shapes,p[0],top=t,left=l[n],small=True)
     replace_text_in_shape(slide_shapes,"Score-{}".format(n),"{0:.0f}%".format(100*p[1]/useful_rows_in_partners),"10th slide")
 
-if oldMode_1:
-    # Place the horizontal bar graph
-    slide_shapes.add_picture(file_hbar, Mm(23),Mm(112), height=Mm(56),width=Mm(140))
-else:
-    # @add: show pie charts and partner wordcloud - 19sep18
-    partner_file = "Visits with Partners.xlsx"
-    logger.info("Importing excel file for partners: "+partner_file+", with header in row "+str(header_row))
-    # Note that "header" is zero-indexed, so must subtract one from header_row
-    partner_df = pd.read_excel(open(partner_file,'rb'),header=0,usecols="A:H")   
-
-    # Subset the dataframe to the 3 month window we are intested in
-    logger.debug("Selecting rows from Partner file from %i-%i to %i-%i" % (year_for_mm_minus_2,mm_minus_2,yyyy,mm))
-    start_date = pd.Timestamp(year_for_mm_minus_2,mm_minus_2,1)
-    if (mm==12): # if current month is december, end date is 1st Jan nest year
-        end_date = pd.Timestamp(yyyy+1,1,1)
-    else: 
-        end_date = pd.Timestamp(yyyy,mm+1,1)
-    partner_3m_df = partner_df.loc[ (partner_df['Visit: Arrival Date']>= start_date) & (partner_df['Visit: Arrival Date'] < end_date) ]
-
-    # Get a Series indexed by centre names, with the number of unique visits 
-    grp_by_ctr_visitID = partner_3m_df.groupby(['Visit: Location','BMT Visit ID'])
-    ctr_counts = grp_by_ctr_visitID.size().groupby('Visit: Location').size()
-    # so now e.g ctr_counts['H'] is the number of unique visits to Houston represented in the Partners spreadie
-
-    Partner_present_count=[ctr_counts[c] for c in centres]
-    # Now subtract the visits already accounted for in other ways
-    #TODO for now only have 1 month, so fake 3 months by multiplying by 3
-    Partner_as_guest = [max(0,3*x-(y+z)) for x,y,z in zip(Partner_present_count, Attended_count, channel_plus_SI) ]
-    logger.debug("Volume by centre - guest: %r" %(Partner_as_guest))
-
-    from pptx.chart.data import ChartData
-    from pptx.enum.chart import XL_CHART_TYPE, XL_LEGEND_POSITION
-    for i,counts in enumerate(zip(channel_plus_SI, Attended_count, Partner_present_count)):
-        logger.debug("Adding pie for "+centres[i]+" with values "+str(counts))
-        chart_data=ChartData()
-        chart_data.categories = ["Partner training","Partner hosted","Partner attended"]
-        chart_data.add_series("set: "+str(i),counts)
-        left_x=Mm(20)
-        height=width=Mm(29)
-        if i==2:
-            chart = slide_shapes.add_chart(XL_CHART_TYPE.PIE, left_x-Mm(3),Mm(120), Mm(150),height+Mm(10), chart_data).chart   
-            chart.has_legend = True
-            chart.legend.position = XL_LEGEND_POSITION.BOTTOM
-            chart.legend.include_in_layout = 0 
-            chart.legend.font.size = Pt(14) 
-        else:
-            chart = slide_shapes.add_chart(XL_CHART_TYPE.PIE, left_x+i*width,Mm(120), width,height ,chart_data).chart
-            chart.has_legend = False
-
-    # Now generate wordcloud
-    grp_by_id_ptr = partner_3m_df.groupby(['BMT Visit ID', 'Attendee Company Name'])
-    ptr_counts = grp_by_id_ptr.size().groupby('Attendee Company Name').size()
-    ptr_counter=Counter()
-    for i,v in ptr_counts.iteritems():
-        ptr_counter[i]=v
-    file_wc_ptr=file_wordcloud_for_partners(ptr_counter)
-    # Add it to the slide template
-    slide_shapes.add_picture(file_wc_ptr, Mm(180),Mm(122), height=Mm(45),width=Mm(140))
-#endif
+# @add: show pie charts and partner wordcloud - 19sep18
+# @del: remove pie charts! - 21sep18
+partner_file = "Visits with Partners.xlsx"
+logger.info("Importing excel file for partners: "+partner_file+", with header in row "+str(header_row))
+# Read the dataframe of all the names, partner names, dates, etc, of the individual people from partners who attended a centre
+partner_df = pd.read_excel(open(partner_file,'rb'),header=0,usecols="A:H")   
+# Subset the dataframe to the 3 month window we are intested in
+logger.debug("Selecting rows from Partner file from %i-%i to %i-%i" % (year_for_mm_minus_2,mm_minus_2,yyyy,mm))
+start_date = pd.Timestamp(year_for_mm_minus_2,mm_minus_2,1)
+if (mm==12): # if current month is december, end date is 1st Jan nest year
+    end_date = pd.Timestamp(yyyy+1,1,1)
+else: 
+    end_date = pd.Timestamp(yyyy,mm+1,1)
+partner_3m_df = partner_df.loc[ (partner_df['Visit: Arrival Date']>= start_date) & (partner_df['Visit: Arrival Date'] < end_date) ]
+# Now generate wordcloud, based on the dataframe we just created
+grp_by_id_ptr = partner_3m_df.groupby(['BMT Visit ID', 'Attendee Company Name'])
+ptr_counts = grp_by_id_ptr.size().groupby('Attendee Company Name').size()
+ptr_counter=Counter()
+for i,v in ptr_counts.iteritems():
+    ptr_counter[i]=v
+file_wc_ptr=file_wordcloud_for_partners(ptr_counter)
+# Add it to the slide template
+slide_shapes.add_picture(file_wc_ptr, Mm(142),Mm(50), height=Mm(40),width=Mm(178))
 
 ################################################
 ## 11th slide: Top interests and industries for last 6 months
