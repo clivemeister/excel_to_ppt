@@ -627,6 +627,13 @@ def add_icon(ss,icon_name,left,top,small=False):
     return
 
 
+def hpe_color_fn(word, font_size, position, orientation, random_state=None, **kwargs):
+    """Returns colour to use for given word, font_size, etc.
+    """
+    import random
+    colour = random.choice(colour_list)
+    return colour
+
 def file_wordcloud_for_partners(partner_counts):
     """Input is partner_counts, a Counter of partner names and occurrences
        Returns the filename where the wordcloud is stored
@@ -638,9 +645,9 @@ def file_wordcloud_for_partners(partner_counts):
 
     # Chop list after most common 30 partners (note, need to use dict() around most_common() as it returns a list)
     p_counts = Counter(dict(partner_counts.most_common(30)))
-    # set font so 20% occurrence of top word uses 196 point font
+    # set font so 15% occurrence of top word uses 196 point font
     percent = round(100*(p_counts.most_common(1)[0][1]/sum(p_counts.values())))
-    font_for_biggest_word = round( 196 * percent/20 )
+    font_for_biggest_word = round( 196 * percent/15 )
 
     font_path = "C:"+os.sep+"Windows"+os.sep+"Fonts"+os.sep+'arial.ttf'
     logger.debug("Generating the wordcloud for Partners")
@@ -654,6 +661,8 @@ def file_wordcloud_for_partners(partner_counts):
                             random_state=1
                             ).generate_from_frequencies(p_counts)
 
+    # Re-colour to the required colour se
+    wc_partners.recolor(color_func=hpe_color_fn, random_state=3)
 
     # Build the generated image
     plt.imshow(wc_partners,interpolation='bilinear')
