@@ -459,7 +459,13 @@ def file_donut_pie_for_month(values,name):
 
     return filename
 
-def file_donut_pie_for_industries(industries,center=""):
+def donut_pie_for_industries(industries,slide_shapes):
+    """Given a Series resulting from value_counts(), and a slide_shapes, we create
+       the doughnut pie chart corresponding to the value counts on the slide_shapes object.
+    """
+    from pptx.chart.data import ChartData
+    from pptx.enum.chart import XL_CHART_TYPE, XL_LEGEND_POSITION
+    from collections import Counter
 
     if (JapanAndChinaToOther and 'Japan' in industries):
         industries.Other += industries.Japan
@@ -469,42 +475,48 @@ def file_donut_pie_for_industries(industries,center=""):
         industries.Other += industries.China
         del industries['China']
 
-    fig, ax = plt.subplots()
-    ax.axis('equal')
-    width = 2.0
-    outside, _ = ax.pie(industries.values,
-                        startangle=90,counterclock=False,
-                        colors=list(colour_list),
-                        radius=5.0)
-    ax.legend(industries.index.tolist(),ncol=3,fontsize=24,loc=10,bbox_to_anchor=(0.5,-2),frameon=False)
-    plt.setp( outside, width=width, edgecolor='white')
+    industry_counts = Counter( dict(zip(industries.keys().tolist(),industries.tolist())) )    # put in Counter so we can retrieve in descending order
 
-    filename = tmpdir+"donut-industries"+center+".png"
-    logger.debug("Saving Industries donut in file %s with values %r" % (filename, industries))
-    fig.savefig(filename,bbox_inches="tight")
+    logger.debug("Adding pie for industries with data: "+str(industry_counts))
+    chart_data=ChartData()
+    # This next is a bit obscure, but if i_c=Counter([('A':5),('B':4),('C':3)])
+    # then zip(*i_c.most_common()) gives us a zip object which iterates out to a list of the keys, and the values, in descending order
+    ind_lists = [i for i in zip(*industry_counts.most_common())] 
+    chart_data.categories=ind_lists[0]
+    chart_data.add_series("Industries",ind_lists[1])
+    left_x=Mm(19)
+    top_y=Mm(57)
+    width=Mm(83); height=Mm(120)
+    chart = slide_shapes.add_chart(XL_CHART_TYPE.DOUGHNUT, left_x,top_y, width, height, chart_data).chart   
+    chart.has_title = False   #TODO: work out why we are still getting a title for the chart, even when we ask not to have one!!
+    chart.has_legend = True
+    chart.legend.position = XL_LEGEND_POSITION.BOTTOM 
+    chart.legend.include_in_layout = 0 
+    chart.legend.font.size = Pt(11) 
 
-    plt.close(fig)
+    return 
 
-    if False:
-        from pptx.chart.data import ChartData
-        from pptx.enum.chart import XL_CHART_TYPE, XL_LEGEND_POSITION
-        for i,counts in enumerate(zip(channel_plus_SI, Attended_count, Partner_present_count)):
-            logger.debug("Adding pie for "+centres[i]+" with values "+str(counts))
-            chart_data=ChartData()
-            chart_data.categories = ["Partner training","Partner hosted","Partner attended"]
-            chart_data.add_series("set: "+str(i),counts)
-            left_x=Mm(20)
-            height=width=Mm(29)
-            if i==2:
-                chart = slide_shapes.add_chart(XL_CHART_TYPE.PIE, left_x-Mm(3),Mm(120), Mm(150),height+Mm(10), chart_data).chart   
-                chart.has_legend = True
-                chart.legend.position = XL_LEGEND_POSITION.BOTTOM
-                chart.legend.include_in_layout = 0 
-                chart.legend.font.size = Pt(14) 
-            else:
-                chart = slide_shapes.add_chart(XL_CHART_TYPE.PIE, left_x+i*width,Mm(120), width,height ,chart_data).chart
-                chart.has_legend = False
-    return filename
+def donut_pie_for_centres(value_tuple,legend,slide_shapes,left_x,top_y,width,height):
+    """Given a tuple of values, and a list of legend keys, such as (3,4,5,1,2) and ['EBC,'SNG','NY','H','LON']
+       put a donut pie chart on the slide_shapes using the values from the list, in the given position & size, 
+       with a legend underneath the pie of the data element names (the keys in the list).
+       We use a list, not a dictionary, because we want to preserve order of the keys.
+    """
+    from pptx.chart.data import ChartData
+    from pptx.enum.chart import XL_CHART_TYPE, XL_LEGEND_POSITION
+
+    logger.debug("Adding pie with data: "+str(value_tuple))
+    chart_data=ChartData()
+    chart_data.categories=legend
+    chart_data.add_series("Centres",value_tuple)
+    chart = slide_shapes.add_chart(XL_CHART_TYPE.DOUGHNUT, left_x,top_y, width, height, chart_data).chart   
+    chart.has_title = False   #TODO: work out why we are still getting a title for the chart, even when we ask not to have one!!
+    chart.has_legend = True
+    chart.legend.position = XL_LEGEND_POSITION.BOTTOM 
+    chart.legend.include_in_layout = 0 
+    chart.legend.font.size = Pt(10) 
+
+    return 
 
 def write_customer_list(df_for_kwd,text_frame):
     text_frame.text = "Briefings"
@@ -571,6 +583,7 @@ def find_text_in_shapes(slide_shapes,searchword):
 def replace_text_in_shape(slide_shapes,find,use,slidename):
     """Find the placeholder text "find" in the slide_shapes, replace it with "use",
        reporting an error on "slidename" if we can't find "find"
+       Returns the text_frame written
     """
     i = find_text_in_shapes(slide_shapes,find)
     if (i>=0):
@@ -629,8 +642,11 @@ def get_image_size(fname):
         return width, height
 
 def add_icon(ss,icon_name,left,top,small=False):
+    """Add the icon in icondir/icon_name to the slide shape ss at coordinates left,top
+       If small is True, make it a smaller icon.
+    """
     ## ok if icon exists, and use error icon if not
-    logger.debug("adding icon {}".format(icon_name))
+    logger.debug("adding icon <{}> at ({},{})".format(icon_name,left,top))
     try:
         filename = icondir+icon_name+".png"
         icon_width, _icon_height = get_image_size(filename)
@@ -983,26 +999,22 @@ else:
 ## 9th slide: Now generate the Industry Insights donuts and top keyword lists
 ################################################
 logger.info(">>>> 9th slide: industries and how they show up across the centres")
-## Generate the image for the big donut showing volume for all industries across the months
-industry_counts = df_for_3months["Industry"].value_counts()
-file_donut_ind_vols = file_donut_pie_for_industries(industry_counts)
 
 ## Generate the individual donuts showing, for each industry, the spread across the centres
 
-
 # set up some dictionaries to hold the industry datasets for later
 df_for_ind={}
-file_donut_for_ind={}
 kwd_counts_for_ind={}
+ctr_counts_for_ind={}
 
 logger.debug("Generating dataframes for each industry for last 3 months")
 for ind in industry_list:
     df_for_ind[ind] = df_for_3months[df_for_3months["Industry"]==ind]
-    file_donut_for_ind[ind] = file_donut_pie_for_month(counts_by_centre(df_for_ind[ind]),ind)
+    ctr_counts_for_ind[ind]=counts_by_centre( df_for_ind[ind] )
     kwd_counts_for_ind[ind] = kwds_in_wtlma_actions(df_for_ind[ind],vocab)
     logger.debug("Top keyword/counts for %s: %r" % (ind,kwd_counts_for_ind[ind].most_common(4)) )
 
-## Now write out the charts and text on industry (9th) slide
+## Now write out the charts and text on industry slide
 s = prs.slides[8]
 slide_shapes=s.shapes
 
@@ -1014,36 +1026,33 @@ new_run_in_slide(title_frame.paragraphs[0],text="Industry Insights "+earliest_mo
 
 #Add the one big donut showing volumes for each industry to the slide
 logger.debug("Adding main donut to Industry Insights slide (9th slide)")
-left=Mm(42); top=Mm(48)
-slide_shapes.add_picture(file_donut_ind_vols,left,top,height=Mm(112),width=Mm(96))
+industry_counts = df_for_3months["Industry"].value_counts()
+donut_pie_for_industries(industry_counts,slide_shapes)
 
 #Add the individual industry donuts broken down by centre to the slide
-#Need to pick the top 5, excluding "Other", from the list in industry_list
+#Need to pick the top N, excluding "Other", from the list in industry_list
 logger.debug("Adding donuts for top industries in each centre (9th slide)")
-left=Mm(208); top=(Mm(30),Mm(58),Mm(86),Mm(115),Mm(142))
-h=Mm(25); w=Mm(48)
-logger.debug("Generating pie charts for top 5 industries")
+pie_left=(Mm(127),Mm(192),Mm(261), Mm(127),Mm(192),Mm(261)); 
+pie_top =(Mm(40), Mm(40), Mm(40),  Mm(115),Mm(115),Mm(115))
+pie_h=Mm(55); pie_w=Mm(39)
+icon_left=(Mm(168),Mm(234),Mm(303))
+icon_top=(Mm(48),Mm(65),Mm(82),Mm(122),Mm(139),Mm(156))
 n=0 # used to count the number of industry pies we have placed (we can't use enumerate(industry_counts) as we don't always place a pie)
 for ind in industry_counts.index:
     if   (ind!="Other"):
-        logger.debug("Writing %s as industry %i" %(industry_longnames[ind],n))
+        logger.debug("Writing %s as industry %i" %(ind,n))
         #Write the industry name as the main title for this box
-        replace_text_in_shape(slide_shapes,"Industry-{}".format(n),industry_longnames[ind],"9th slide")
+        replace_text_in_shape(slide_shapes,"Industry-{}".format(n),ind,"9th slide")
         #Add the donut showing breakdown of centres that hosted this industry
-        slide_shapes.add_picture(file_donut_for_ind[ind], left,top[n], height=h,width=w)
+        donut_pie_for_centres(ctr_counts_for_ind[ind],['PA','H','NY','L','SNG'],slide_shapes,pie_left[n],pie_top[n],pie_w,pie_h)
         #Now write the list of top interests for this industry
-        idx = find_text_in_shapes(slide_shapes,"Top interests - {}".format(n))
-        if (idx>=0):
-            text_frame = slide_shapes[idx].text_frame
-            write_top_keywords(text_frame,"Top Interests",
-                               kwd_counts_for_ind[ind],
-                               count_rows_with_comments(df_for_ind[ind]),
-                               percent=False
-                              )
-        else:
-            logger.error("Could not find <Top interests - {}> placeholder on 9th slide".format(n))
+        for interest_idx, p in enumerate(kwd_counts_for_ind[ind].most_common(3)):
+            interest=p[0]
+            logger.debug("Replacing {}-interest-{} with {} and its icon".format(n,interest_idx,interest))
+            replace_text_in_shape(slide_shapes,"{}-interest-{}".format(n,interest_idx),interest,"9th slide")
+            add_icon(slide_shapes,interest,left=icon_left[n%3],top=icon_top[3*(n//3)+interest_idx],small=True)
         n+=1
-    if (n>=5): break    # Stop after we've put 5 pictures in place
+    if (n>=6): break    # Stop after we've put enough pictures in place
 
 ################################################
 ## 10th slide: Partner insights
@@ -1107,9 +1116,9 @@ if (mm==12): # if current month is december, end date is 1st Jan nest year
 else: 
     end_date = pd.Timestamp(yyyy,mm+1,1)
 partner_3m_df = partner_df.loc[ (partner_df['Visit: Arrival Date']>= start_date) & (partner_df['Visit: Arrival Date'] < end_date) ]
-# Now generate wordcloud, based on the dataframe we just created
-grp_by_id_ptr = partner_3m_df.groupby(['BMT Visit ID', 'Attendee Company Name'])
-ptr_counts = grp_by_id_ptr.size().groupby('Attendee Company Name').size()
+## Now generate wordcloud, based on the dataframe we just created
+grp_by_id_partner = partner_3m_df.groupby(['BMT Visit ID', 'Attendee Company Name'])
+ptr_counts = grp_by_id_partner.size().groupby('Attendee Company Name').size()
 ptr_counter=Counter()
 for i,v in ptr_counts.iteritems():
     ptr_counter[i]=v
@@ -1201,51 +1210,52 @@ for row,ctr in enumerate(["PA","H","NY1","LON1","SNG"]):  #iterate the centres i
 ################################################
 ## 13th slide: EBC specific volumes & interests for last 6 months
 ################################################
-logger.info(">>>> 13th slide: EBC specific industry volumes and top interests")
-## Generate the image for the big donut showing volume for all industries across the months
-PA_industry_counts = dfs_6m_ctr["PA"]["Industry"].value_counts()
-file_donut_PA_ind_vols = file_donut_pie_for_industries(PA_industry_counts,center="PA")
+if False:
+    logger.info(">>>> 13th slide: EBC specific industry volumes and top interests")
+    ## Generate the image for the big donut showing volume for all industries across the months
+    PA_industry_counts = dfs_6m_ctr["PA"]["Industry"].value_counts()
+    file_donut_PA_ind_vols = file_donut_pie_for_industries(PA_industry_counts,center="PA")
 
-## Build the slide
-logger.debug("Setting the title ")
-s = prs.slides[12]
-slide_shapes=s.shapes
-#Update the title
-title_frame = slide_shapes.title.text_frame
-title_frame.clear()
-new_run_in_slide(title_frame.paragraphs[0],text="EBC six month view ("+calendar.month_name[mm_6_before]+"-"+this_month+")",
-       fontname="Arial",fontsize=28)
+    ## Build the slide
+    logger.debug("Setting the title ")
+    s = prs.slides[12]
+    slide_shapes=s.shapes
+    #Update the title
+    title_frame = slide_shapes.title.text_frame
+    title_frame.clear()
+    new_run_in_slide(title_frame.paragraphs[0],text="EBC six month view ("+calendar.month_name[mm_6_before]+"-"+this_month+")",
+        fontname="Arial",fontsize=28)
 
-#Add the one big donut showing volumes for each industry to the slide
-logger.debug("Adding main donut to EBC six month view slide (13th slide)")
-left=Mm(43); top=Mm(48)
-slide_shapes.add_picture(file_donut_PA_ind_vols,left,top,height=Mm(115),width=Mm(94))
+    #Add the one big donut showing volumes for each industry to the slide
+    logger.debug("Adding main donut to EBC six month view slide (13th slide)")
+    left=Mm(43); top=Mm(48)
+    slide_shapes.add_picture(file_donut_PA_ind_vols,left,top,height=Mm(115),width=Mm(94))
 
-#Update, by centre, the top interests, and the top industries with their top interests
-logger.debug("Setting the per-centre top 5 interests, together with per-centre top 3 industries and their interests")
-left_pos=[Mm(180),Mm(210),Mm(240),Mm(270),Mm(299)]   #distances to centre of icon for each row
-#First, the top interests for PA
-for col,p in enumerate(kwd_counts_6m_ctr["PA"].most_common(5)):
-    # p is (keyword: count) for each of the keywords, so p[0] is the keyword itself
-    replace_text_in_shape(slide_shapes,"PA-interest-{}".format(col),p[0],"13th slide")
-    add_icon(slide_shapes,p[0],left=left_pos[col],top=Mm(59),small=True)
-#Next, the top industries with their interests for this centre - industry_counts_6m[c] is already ordered highest->lowest count
-n=0  #count how many displayed - need to do this separately from the loop count, as we ignore "Other" as an industry group
-for ind in industry_counts_6m["PA"].index:
-    if (ind!="Other"):
-        logger.debug("For Palo Alto, industry <%i> is <%s>" %(n,ind))
-        #Write the list of top interests for this industry
-        idx = find_text_in_shapes(slide_shapes,"PA-industry-{}".format(n))
-        if (idx>=0):
-            write_top_keywords(slide_shapes[idx].text_frame,
-                               ind,
-                               kwd_counts_6m_for_top_inds[("PA",ind)],
-                               commented_rows_for_6m[("PA",ind)]
-                              )
-        else:
-            logger.error("Could not find <PA-industry-{}> placeholder on 13th slide - idx={}".format(n,idx))
-        n+=1   #increment the number of industries written out for this centre
-    if (n>=3): break   #exit the loop after writing in 3 industries+interests
+    #Update, by centre, the top interests, and the top industries with their top interests
+    logger.debug("Setting the per-centre top 5 interests, together with per-centre top 3 industries and their interests")
+    left_pos=[Mm(180),Mm(210),Mm(240),Mm(270),Mm(299)]   #distances to centre of icon for each row
+    #First, the top interests for PA
+    for col,p in enumerate(kwd_counts_6m_ctr["PA"].most_common(5)):
+        # p is (keyword: count) for each of the keywords, so p[0] is the keyword itself
+        replace_text_in_shape(slide_shapes,"PA-interest-{}".format(col),p[0],"13th slide")
+        add_icon(slide_shapes,p[0],left=left_pos[col],top=Mm(59),small=True)
+    #Next, the top industries with their interests for this centre - industry_counts_6m[c] is already ordered highest->lowest count
+    n=0  #count how many displayed - need to do this separately from the loop count, as we ignore "Other" as an industry group
+    for ind in industry_counts_6m["PA"].index:
+        if (ind!="Other"):
+            logger.debug("For Palo Alto, industry <%i> is <%s>" %(n,ind))
+            #Write the list of top interests for this industry
+            idx = find_text_in_shapes(slide_shapes,"PA-industry-{}".format(n))
+            if (idx>=0):
+                write_top_keywords(slide_shapes[idx].text_frame,
+                                ind,
+                                kwd_counts_6m_for_top_inds[("PA",ind)],
+                                commented_rows_for_6m[("PA",ind)]
+                                )
+            else:
+                logger.error("Could not find <PA-industry-{}> placeholder on 13th slide - idx={}".format(n,idx))
+            n+=1   #increment the number of industries written out for this centre
+        if (n>=3): break   #exit the loop after writing in 3 industries+interests
 
 ################################################
 ## 14th slide: 3 months of wordclouds based on keywords in objectives
