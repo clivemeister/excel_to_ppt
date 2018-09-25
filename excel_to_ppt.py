@@ -1122,6 +1122,7 @@ ptr_counts = grp_by_id_partner.size().groupby('Attendee Company Name').size()
 ptr_counter=Counter()
 for i,v in ptr_counts.iteritems():
     ptr_counter[i]=v
+ptr_counter['HPE']=0   # Zap out the entry (if any) for HPE as a parter - due to "garbage in" from briefing mgrs
 file_wc_ptr=file_wordcloud_for_partners(ptr_counter)
 # Add it to the slide template
 slide_shapes.add_picture(file_wc_ptr, Mm(142),Mm(50), height=Mm(40),width=Mm(178))
