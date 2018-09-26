@@ -485,8 +485,8 @@ def donut_pie_for_industries(industries,slide_shapes):
     chart_data.categories=ind_lists[0]
     chart_data.add_series("Industries",ind_lists[1])
     left_x=Mm(19)
-    top_y=Mm(57)
-    width=Mm(83); height=Mm(120)
+    top_y=Mm(53)
+    width=Mm(83); height=Mm(110)
     chart = slide_shapes.add_chart(XL_CHART_TYPE.DOUGHNUT, left_x,top_y, width, height, chart_data).chart   
     chart.has_title = False   #TODO: work out why we are still getting a title for the chart, even when we ask not to have one!!
     chart.has_legend = True
@@ -1000,9 +1000,7 @@ else:
 ################################################
 logger.info(">>>> 9th slide: industries and how they show up across the centres")
 
-## Generate the individual donuts showing, for each industry, the spread across the centres
-
-# set up some dictionaries to hold the industry datasets for later
+## Sort through the dataframes, extracting relevant information, saving it in dictionaries for later use
 df_for_ind={}
 kwd_counts_for_ind={}
 ctr_counts_for_ind={}
@@ -1032,11 +1030,11 @@ donut_pie_for_industries(industry_counts,slide_shapes)
 #Add the individual industry donuts broken down by centre to the slide
 #Need to pick the top N, excluding "Other", from the list in industry_list
 logger.debug("Adding donuts for top industries in each centre (9th slide)")
-pie_left=(Mm(127),Mm(192),Mm(261), Mm(127),Mm(192),Mm(261)); 
-pie_top =(Mm(40), Mm(40), Mm(40),  Mm(115),Mm(115),Mm(115))
-pie_h=Mm(55); pie_w=Mm(39)
-icon_left=(Mm(168),Mm(234),Mm(303))
-icon_top=(Mm(48),Mm(65),Mm(82),Mm(122),Mm(139),Mm(156))
+pie_left=(Mm(110),Mm(164),Mm(217),Mm(272), Mm(110),Mm(164),Mm(217),Mm(272))
+pie_top =(Mm(40), Mm(40), Mm(40), Mm(40),  Mm(115),Mm(115),Mm(115),Mm(115))
+pie_h=Mm(50); pie_w=Mm(35)
+icon_left=(Mm(143),Mm(198),Mm(252),Mm(306))    # Placement for icons in each of 4 columns
+icon_top=(Mm(48),Mm(65),Mm(82),Mm(122),Mm(138),Mm(156))   # Placement of icons in two sets of rows, three in each row
 n=0 # used to count the number of industry pies we have placed (we can't use enumerate(industry_counts) as we don't always place a pie)
 for ind in industry_counts.index:
     if   (ind!="Other"):
@@ -1050,9 +1048,9 @@ for ind in industry_counts.index:
             interest=p[0]
             logger.debug("Replacing {}-interest-{} with {} and its icon".format(n,interest_idx,interest))
             replace_text_in_shape(slide_shapes,"{}-interest-{}".format(n,interest_idx),interest,"9th slide")
-            add_icon(slide_shapes,interest,left=icon_left[n%3],top=icon_top[3*(n//3)+interest_idx],small=True)
+            add_icon(slide_shapes,interest,left=icon_left[n%4],top=icon_top[3*(n//4)+interest_idx],small=True)
         n+=1
-    if (n>=6): break    # Stop after we've put enough pictures in place
+    if (n>=8): break    # Stop after we've put enough pictures in place
 
 ################################################
 ## 10th slide: Partner insights
@@ -1117,8 +1115,8 @@ else:
     end_date = pd.Timestamp(yyyy,mm+1,1)
 partner_3m_df = partner_df.loc[ (partner_df['Visit: Arrival Date']>= start_date) & (partner_df['Visit: Arrival Date'] < end_date) ]
 ## Now generate wordcloud, based on the dataframe we just created
-grp_by_id_partner = partner_3m_df.groupby(['BMT Visit ID', 'Attendee Company Name'])
-ptr_counts = grp_by_id_partner.size().groupby('Attendee Company Name').size()
+grp_by_partner = partner_3m_df.groupby(['Attendee Company Name'])
+ptr_counts = grp_by_partner.size()
 ptr_counter=Counter()
 for i,v in ptr_counts.iteritems():
     ptr_counter[i]=v
