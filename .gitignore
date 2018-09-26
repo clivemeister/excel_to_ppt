@@ -12,7 +12,6 @@
 
 #ignore the subsidiary directories
 tmp/
-icons/
 .ipynb_checkpoints/
 profile2.txt
 .vscode/
