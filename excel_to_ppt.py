@@ -1,7 +1,7 @@
 """ Read the insights.xls file and conver to GCA_Customer_Insights_mmmm-yyyy.pptx
 
     Typical usage to get Insights for June 2018 would be:
-        py excel_to_ppt.py -m6 -y2018 -v
+        py excel_to_ppt.py -m6 -y2018 
 
     Uses the GCA_Customer_Insights_Month-Year.pptx as a template.
     Uses the excel_to_ppt.ini file for the vocabulary of words, synonyms, colours to use, etc etc
@@ -34,6 +34,7 @@ stop_after_wordcheck = False
 yyyy,mm=date.today().year,date.today().month-1
 header_row=1
 oldMode_1 = False
+sentimentCalcs = False
 
 def print_help():
     print("excel_to_ppt.py  -ifile=<inputExcelFile>    default is Insights.xlsx")
@@ -42,23 +43,24 @@ def print_help():
     print("                 -m<mm>                     month to process, e.g. -m7")
     print("                 -y<yyyy>                   year to process, e.g. -y2018")
     print("                 -w                     stop after showing possible extra words")
-    print("                 -h<n>                  set which row of the spreadsheet is the first (header) row.  Default is 1.")
+    print("                 -r<n>                  set which row of the spreadsheet is the first (header) row.  Default is 1.")
     print("                 -d                     turn on debugging trace")
+    print("                 -s                     turn on experiemental sentiment analysis")
     print("                 -q                     turn on quiet mode - shows only information")
-    print("For example, excel_to_ppt.py -m8 -y2018 -t")
+    print("For example, excel_to_ppt.py -m8 -y2018 -s")
     return
 
 if __name__=="__main__":
     logging.debug("Parsing arguments")
     try:
-        opts, args = getopt.getopt(sys.argv[1:],"hdwvi:y:m:",["ifile=","year=","month="])
+        opts, args = getopt.getopt(sys.argv[1:],"?hdwsvi:y:m:r:",["ifile=","year=","month="])
     except getopt.GetoptError as err:
         print(err)
         print_help()
         sys.exit(2)
     logger.debug("opt: "+str(opts)+" and args: "+str(args))  
     for opt, arg in opts:
-        if opt == "-h":
+        if opt in ("-?","-h"):
             print_help()
             sys.exit()
         elif opt == "-d":
@@ -73,11 +75,13 @@ if __name__=="__main__":
         elif opt in ("-m", "--month"):
             logging.debug("Found argument mm with {}".format(arg))
             mm = int(arg)
-        elif opt in ("-h"):
+        elif opt in ("-r"):
             logging.debug("Found argument header_row with {}".format(arg))
             header_row = int(arg)
         elif opt == "-w":
             stop_after_wordcheck = True
+        elif opt == "-s":
+            sentimentCalcs = True
         elif opt == "-o":
             logging.info("Working in old mode {}".format(arg))
             if int(arg)==1:
@@ -733,7 +737,6 @@ def sentiment_by_month(df, count, year, month):
                 tot_snt['neg'] += snt['neg']
                 tot_snt['neu'] += snt['neu']
                 tot_snt['pos'] += snt['pos']
-                tot_snt['compound'] += snt['compound']
         if (n > 0):        
             avg_snt['neg'] = round(tot_snt['neg'] / n, 3)         
             avg_snt['neu'] = round(tot_snt['neu'] / n, 3)         
@@ -1035,22 +1038,19 @@ pie_top =(Mm(40), Mm(40), Mm(40), Mm(40),  Mm(115),Mm(115),Mm(115),Mm(115))
 pie_h=Mm(50); pie_w=Mm(35)
 icon_left=(Mm(143),Mm(198),Mm(252),Mm(306))    # Placement for icons in each of 4 columns
 icon_top=(Mm(48),Mm(65),Mm(82),Mm(122),Mm(138),Mm(156))   # Placement of icons in two sets of rows, three in each row
-n=0 # used to count the number of industry pies we have placed (we can't use enumerate(industry_counts) as we don't always place a pie)
-for ind in industry_counts.index:
-    if   (ind!="Other"):
-        logger.debug("Writing %s as industry %i" %(ind,n))
-        #Write the industry name as the main title for this box
-        replace_text_in_shape(slide_shapes,"Industry-{}".format(n),ind,"9th slide")
-        #Add the donut showing breakdown of centres that hosted this industry
-        donut_pie_for_centres(ctr_counts_for_ind[ind],['PA','H','NY','L','SNG'],slide_shapes,pie_left[n],pie_top[n],pie_w,pie_h)
-        #Now write the list of top interests for this industry
-        for interest_idx, p in enumerate(kwd_counts_for_ind[ind].most_common(3)):
-            interest=p[0]
-            logger.debug("Replacing {}-interest-{} with {} and its icon".format(n,interest_idx,interest))
-            replace_text_in_shape(slide_shapes,"{}-interest-{}".format(n,interest_idx),interest,"9th slide")
-            add_icon(slide_shapes,interest,left=icon_left[n%4],top=icon_top[3*(n//4)+interest_idx],small=True)
-        n+=1
-    if (n>=8): break    # Stop after we've put enough pictures in place
+for n,ind in enumerate(['Public Sector','Fin Svcs','RCG','Energy','Health & LS','Mfg','CME','Travel & Trans']):
+    #['Public Sector','Fin Svcs','RCG','Energy','Health & LS','Mfg','CME','Travel & Trans']
+    logger.debug("Writing %s as industry %i" %(ind,n))
+    #Write the industry name as the main title for this box
+    replace_text_in_shape(slide_shapes,"Industry-{}".format(n),ind,"9th slide")
+    #Add the donut showing breakdown of centres that hosted this industry
+    donut_pie_for_centres(ctr_counts_for_ind[ind],['PA','H','NY','L','SNG'],slide_shapes,pie_left[n],pie_top[n],pie_w,pie_h)
+    #Now write the list of top interests for this industry
+    for interest_idx, p in enumerate(kwd_counts_for_ind[ind].most_common(3)):
+        interest=p[0]
+        logger.debug("Replacing {}-interest-{} with {} and its icon".format(n,interest_idx,interest))
+        replace_text_in_shape(slide_shapes,"{}-interest-{}".format(n,interest_idx),interest,"9th slide")
+        add_icon(slide_shapes,interest,left=icon_left[n%4],top=icon_top[3*(n//4)+interest_idx],small=True)
 
 ################################################
 ## 10th slide: Partner insights
@@ -1115,8 +1115,8 @@ else:
     end_date = pd.Timestamp(yyyy,mm+1,1)
 partner_3m_df = partner_df.loc[ (partner_df['Visit: Arrival Date']>= start_date) & (partner_df['Visit: Arrival Date'] < end_date) ]
 ## Now generate wordcloud, based on the dataframe we just created
-grp_by_partner = partner_3m_df.groupby(['Attendee Company Name'])
-ptr_counts = grp_by_partner.size()
+grp_by_partner = partner_3m_df.groupby(['Attendee Company Name']) # group has one row per attendee, grouped by partner name
+ptr_counts = grp_by_partner.size() # counts number of each partner - need to turn this into a python Counter() object
 ptr_counter=Counter()
 for i,v in ptr_counts.iteritems():
     ptr_counter[i]=v
@@ -1133,9 +1133,12 @@ df_6months = dataframe_for_6months(all_df, year=yyyy, month=mm)
 
 # Calculate the sentiment by month for the last 6 months
 sentiment_6months = sentiment_by_month(df_6months, count=6, year=yyyy, month=mm)
-# Get top scoring comments for this month
-top_comments_in_month = top_sentiment_in_month(df_for_month,count=4)
-
+if sentimentCalcs:
+    # Get top scoring comments for this month
+    top_comments_in_month = top_sentiment_in_month(df_for_month,count=4)   
+    for c in top_comments_in_month:
+        print(top_comments_in_month[c],":",c)
+    
 #build a dictionary of dataframes subsetted by centre, a dictionary of keywords by centre,
 #and a dict of top 3 industries per centre and their keywords (where the key is a tuple of (centre, industry) )
 dfs_6m_ctr={}
